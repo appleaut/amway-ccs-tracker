@@ -8,7 +8,7 @@ use crate::app::AppState;
 use crate::error::{AppError, Result};
 use crate::models::contact::{Contact, CustomerScore, ProspectScore};
 use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank};
-use crate::ui::ACCENT;
+use crate::ui::{ACCENT, ACCENT_STRONG};
 use crate::utils::scoring;
 
 /// Editable, string-friendly mirror of a contact and its score, bound directly
@@ -289,7 +289,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
 }
 
 fn prospect_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
-    ui.label(egui::RichText::new("คะแนนผู้มุ่งหวัง (Sponsor List)").color(ACCENT).strong());
+    ui.label(egui::RichText::new("คะแนนผู้มุ่งหวัง (Sponsor List)").color(ACCENT_STRONG).strong());
     egui::Grid::new("p_score_grid")
         .num_columns(2)
         .spacing([10.0, 6.0])
@@ -319,7 +319,7 @@ fn prospect_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
 }
 
 fn customer_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
-    ui.label(egui::RichText::new("คะแนนลูกค้า (Customer List)").color(ACCENT).strong());
+    ui.label(egui::RichText::new("คะแนนลูกค้า (Customer List)").color(ACCENT_STRONG).strong());
     egui::Grid::new("c_score_grid")
         .num_columns(2)
         .spacing([10.0, 6.0])
@@ -345,7 +345,7 @@ fn customer_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
 }
 
 fn abo_section(ui: &mut egui::Ui, f: &mut ContactForm, abos: &[Contact], editing_id: Option<i64>) {
-    ui.label(egui::RichText::new("ข้อมูลนักธุรกิจ (ABO)").color(ACCENT).strong());
+    ui.label(egui::RichText::new("ข้อมูลนักธุรกิจ (ABO)").color(ACCENT_STRONG).strong());
     egui::Grid::new("abo_grid")
         .num_columns(2)
         .spacing([10.0, 6.0])

@@ -9,10 +9,11 @@ enforced in code (not just the UI), and the automated suite passes.
 |---------|--------|
 | `cargo build` (debug) | ✅ Finished, **0 warnings, 0 errors** |
 | `cargo build --release --target x86_64-pc-windows-msvc` | ✅ Finished — `target\x86_64-pc-windows-msvc\release\amway_ccs_tracker.exe` (≈6.1 MB) |
-| `cargo test` | ✅ **17 passed; 0 failed** |
+| `cargo test` | ✅ **18 passed; 0 failed** |
 
 Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
-(bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1.
+(bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1; plus
+`egui_extras` 0.28 (`TableBuilder` for full-width tables).
 
 ## 2. Automated tests written
 
@@ -40,6 +41,7 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `sponsor_step_cannot_skip` | set Step5 from Step1 `Err` |
 | `rank_cannot_regress_on_update` | CL→C1 `Err`; CL→CL21 `Ok` |
 | `changing_type_drops_opposing_score` | Prospect→Customer clears prospect score |
+| `abo_rows_resolve_upline_name_and_filter_by_type` | ABO list shows only ABOs + resolves upline name; search filters |
 
 ## 3. Business-rule enforcement (verified in code, not just UI)
 
@@ -74,9 +76,11 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] Sponsor step badge shows; ▶ advances one step; skipping is impossible
 - [ ] Advancing past Step 8 shows "last step" message (no crash)
 - [ ] Add customer → appears in Customers list, sorted by score
+- [ ] ABO page lists business partners with rank + upline; add/edit/delete works
 - [ ] Follow-up checkboxes persist after closing & reopening the app
 - [ ] Follow-up progress bar updates as items are checked
-- [ ] Network tree renders the seeded 3-level hierarchy (พิชัย → สมหญิง → วีระ)
+- [ ] Network chart renders the seeded hierarchy radially (ฉัน → พิชัย → สมหญิง → วีระ)
+- [ ] Clicking a table column header sorts it; clicking again flips direction (▲/▼)
 - [ ] Search box filters prospect/customer lists by name/phone in real time
 - [ ] Edit contact → changes saved and reflected in the list
 - [ ] Delete contact → removed from all views; its scores/follow-up gone
@@ -94,3 +98,10 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
   different field weighting; the implementation uses the field ranges as written.
 * **Versions honored as pinned** (egui 0.28 / rusqlite 0.31); both build cleanly
   on the Rust 1.95 / MSVC 2026 toolchain present.
+* **PV → rank/bonus logic verified** against the spec: rank thresholds
+  (5,000=C1 / 10,000=CL / 20,000=CL15 / 30,000=CL21) and bonus tiers
+  (5k=6% … 150k=21%). `bonus_percent_tiers` now also asserts one-unit-below each
+  threshold to rule out off-by-one. Note: rank uses Personal-Group-PV thresholds
+  while bonus uses the 6-tier table — they are intentionally different scales, so
+  e.g. 15,000 PV shows "CL, 9%". No 3% entry-tier is defined in the spec (real
+  Amway has one below 5,000 PV); easy to add if desired.

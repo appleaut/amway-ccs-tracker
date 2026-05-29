@@ -1,15 +1,16 @@
-//! Customer list (Customer Name List): searchable, score-sorted table.
+//! ABO list: searchable management table of business partners (rank + upline)
+//! with add/edit/delete.
 
 use egui_extras::{Column, TableBuilder};
 
 use crate::app::AppState;
 use crate::models::enums::ContactType;
 use crate::ui::forms::{self, ContactForm};
-use crate::ui::{self, ACCENT};
+use crate::ui::{ACCENT, ACCENT_STRONG};
 
 pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(6.0);
-    ui.heading("ลูกค้า VIP / Customers");
+    ui.heading("นักธุรกิจ / ABO");
     ui.add_space(6.0);
 
     ui.horizontal(|ui| {
@@ -24,23 +25,23 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         }
         ui.separator();
         if ui
-            .add(egui::Button::new("➕ เพิ่มลูกค้า").fill(ACCENT))
+            .add(egui::Button::new("➕ เพิ่ม ABO").fill(ACCENT))
             .clicked()
         {
-            app.form = ContactForm::for_new_with_type(ContactType::Customer);
+            app.form = ContactForm::for_new_with_type(ContactType::Abo);
         }
     });
 
     ui.add_space(8.0);
 
-    let r = app.db.list_customer_rows(&app.search);
+    let r = app.db.list_abo_rows(&app.search);
     let mut rows = app.handle(r, Vec::new());
     if rows.is_empty() {
-        ui.weak("— ไม่มีข้อมูลลูกค้า —");
+        ui.weak("— ไม่มีข้อมูลนักธุรกิจ (ABO) —");
         return;
     }
 
-    let mut sort = app.customer_sort;
+    let mut sort = app.abo_sort;
     match sort.col {
         0 => rows.sort_by(|a, b| {
             a.contact
@@ -49,7 +50,12 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 .cmp(&b.contact.display_name().to_lowercase())
         }),
         1 => rows.sort_by(|a, b| a.contact.phone.cmp(&b.contact.phone)),
-        2 => rows.sort_by(|a, b| a.score_total.cmp(&b.score_total)),
+        2 => rows.sort_by(|a, b| {
+            let ra = a.contact.rank.map(|r| r.ordinal()).unwrap_or(0);
+            let rb = b.contact.rank.map(|r| r.ordinal()).unwrap_or(0);
+            ra.cmp(&rb)
+        }),
+        3 => rows.sort_by(|a, b| a.upline_name.cmp(&b.upline_name)),
         _ => {}
     }
     if !sort.ascending {
@@ -66,13 +72,15 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .column(Column::remainder().at_least(160.0)) // ชื่อ
         .column(Column::auto().at_least(120.0)) // เบอร์โทร
-        .column(Column::auto()) // คะแนน
+        .column(Column::auto()) // ระดับ
+        .column(Column::remainder().at_least(140.0)) // อัพไลน์
         .column(Column::auto()) // จัดการ
         .header(28.0, |mut header| {
-            let cols: [(&str, Option<usize>); 4] = [
+            let cols: [(&str, Option<usize>); 5] = [
                 ("ชื่อ", Some(0)),
                 ("เบอร์โทร", Some(1)),
-                ("คะแนน", Some(2)),
+                ("ระดับ", Some(2)),
+                ("อัพไลน์", Some(3)),
                 ("จัดการ", None),
             ];
             for (label, col) in cols {
@@ -102,11 +110,11 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         ui.label(row.contact.phone.clone().unwrap_or_default());
                     });
                     tr.col(|ui| {
-                        ui.label(
-                            egui::RichText::new(row.score_total.to_string())
-                                .color(ui::score_color(row.score_total, 10))
-                                .strong(),
-                        );
+                        let rank = row.contact.rank.map(|r| r.as_str()).unwrap_or("—");
+                        ui.label(egui::RichText::new(rank).color(ACCENT_STRONG).strong());
+                    });
+                    tr.col(|ui| {
+                        ui.label(row.upline_name.clone().unwrap_or_else(|| "—".to_string()));
                     });
                     tr.col(|ui| {
                         if ui.small_button("✏").on_hover_text("แก้ไข").clicked() {
@@ -122,7 +130,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
     if let Some(c) = sort_clicked {
         sort.toggle(c);
-        app.customer_sort = sort;
+        app.abo_sort = sort;
     }
     if let Some(id) = edit_id {
         forms::open_edit(app, id);

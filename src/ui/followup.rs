@@ -5,7 +5,7 @@ use chrono::Local;
 
 use crate::app::AppState;
 use crate::models::followup::FollowUpSheet;
-use crate::ui::ACCENT;
+use crate::ui::ACCENT_STRONG;
 
 pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(6.0);
@@ -115,7 +115,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
 /// A collapsible section header with the supplied checkboxes inside.
 fn section(ui: &mut egui::Ui, title: &str, add: impl FnOnce(&mut egui::Ui)) {
-    egui::CollapsingHeader::new(egui::RichText::new(title).color(ACCENT).strong())
+    egui::CollapsingHeader::new(egui::RichText::new(title).color(ACCENT_STRONG).strong())
         .default_open(true)
         .show(ui, add);
 }

@@ -1,6 +1,7 @@
 //! Application state, the eframe main loop, sidebar navigation, settings, and
 //! one-time setup (fonts, theme, database location).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::db::DbConnection;
@@ -8,7 +9,7 @@ use crate::error::{AppError, Result};
 use crate::models::contact::{Contact, CustomerScore, ProspectScore};
 use crate::models::enums::{ContactType, NetworkCategory, Rank, SponsorStep};
 use crate::ui::forms::ContactForm;
-use crate::ui::{self, View, ACCENT};
+use crate::ui::{self, View, ACCENT, ACCENT_STRONG};
 
 /// Top-level mutable state shared across all views.
 pub struct AppState {
@@ -29,6 +30,13 @@ pub struct AppState {
     pub font_name: String,
     /// PV figure typed into the Settings rank calculator.
     pub pv_input: String,
+    /// Per-table sort state.
+    pub prospect_sort: ui::SortSpec,
+    pub customer_sort: ui::SortSpec,
+    pub abo_sort: ui::SortSpec,
+    /// User-dragged position offsets for downline-chart nodes, keyed by contact
+    /// id (the central "me" node uses `i64::MIN`). Empty = pure auto-layout.
+    pub node_offsets: HashMap<i64, egui::Vec2>,
 }
 
 impl AppState {
@@ -50,6 +58,10 @@ impl AppState {
             db_location: path.display().to_string(),
             font_name,
             pv_input: String::new(),
+            prospect_sort: ui::SortSpec::new(2, false), // score, descending
+            customer_sort: ui::SortSpec::new(2, false), // score, descending
+            abo_sort: ui::SortSpec::new(0, true),       // name, ascending
+            node_offsets: HashMap::new(),
         })
     }
 
@@ -78,7 +90,7 @@ impl AppState {
 
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         ui.add_space(10.0);
-        ui.label(egui::RichText::new("Amway CCS").color(ACCENT).size(22.0).strong());
+        ui.label(egui::RichText::new("Amway CCS").color(ACCENT_STRONG).size(24.0).strong());
         ui.label(egui::RichText::new("Prospect & Downline Tracker").size(11.0).weak());
         ui.add_space(8.0);
         ui.separator();
@@ -87,7 +99,8 @@ impl AppState {
         let items = [
             (View::Dashboard, "🏠  แดชบอร์ด"),
             (View::Prospects, "🎯  ผู้มุ่งหวัง"),
-            (View::Customers, "🛒  ลูกค้า VIP"),
+            (View::Customers, "💳  ลูกค้า VIP"),
+            (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Settings, "⚙  ตั้งค่า"),
@@ -124,7 +137,7 @@ impl AppState {
                     clear = true;
                 }
             } else if let Some(s) = status {
-                ui.colored_label(ACCENT, format!("✓ {s}"));
+                ui.colored_label(ACCENT_STRONG, format!("✓ {s}"));
             } else {
                 ui.label(
                     egui::RichText::new("พร้อมใช้งาน • Amway CCS Tracker v0.1")
@@ -197,7 +210,7 @@ impl AppState {
                     rank.as_str(),
                     bonus
                 ))
-                .color(ACCENT)
+                .color(ACCENT_STRONG)
                 .strong(),
             );
         } else if !trimmed.is_empty() {
@@ -304,6 +317,7 @@ impl eframe::App for AppState {
             View::Dashboard => ui::dashboard::render(self, ui),
             View::Prospects => ui::prospect_list::render(self, ui),
             View::Customers => ui::customer_list::render(self, ui),
+            View::Abos => ui::abo_list::render(self, ui),
             View::FollowUp => ui::followup::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
             View::Settings => self.settings(ui),
@@ -323,49 +337,92 @@ fn db_path() -> Result<PathBuf> {
     Ok(dir.join("data.db"))
 }
 
-/// Install a Thai-capable font as the primary proportional/monospace family.
-/// Returns the font description for the Settings screen.
+/// Embed the Kanit Thai font (Regular + Medium) and make it the primary face,
+/// so the binary stays self-contained and renders Thai everywhere. Returns a
+/// description for the Settings screen.
 fn setup_fonts(ctx: &egui::Context) -> String {
-    const CANDIDATES: [(&str, &str); 3] = [
-        ("Leelawadee UI", r"C:\Windows\Fonts\LeelawUI.ttf"),
-        ("Leelawadee", r"C:\Windows\Fonts\leelawad.ttf"),
-        ("Tahoma", r"C:\Windows\Fonts\tahoma.ttf"),
-    ];
-
     let mut fonts = egui::FontDefinitions::default();
-    for (name, path) in CANDIDATES {
-        if let Ok(bytes) = std::fs::read(path) {
-            fonts
-                .font_data
-                .insert("thai".to_owned(), egui::FontData::from_owned(bytes));
-            fonts
-                .families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .insert(0, "thai".to_owned());
-            fonts
-                .families
-                .entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("thai".to_owned());
-            ctx.set_fonts(fonts);
-            return format!("{name} ({path})");
-        }
+
+    fonts.font_data.insert(
+        "kanit".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/Kanit-Regular.ttf")),
+    );
+    fonts.font_data.insert(
+        "kanit-medium".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/Kanit-Medium.ttf")),
+    );
+
+    // Kanit Regular as the default proportional + monospace face, keeping the
+    // existing fallbacks (Ubuntu + egui's emoji/icon fonts) for glyph coverage.
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "kanit".to_owned());
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "kanit".to_owned());
+
+    // A medium-weight named family for headings / buttons. It MUST keep the
+    // emoji/icon fallback fonts: egui renders buttons AND menu items
+    // (selectable_label) with TextStyle::Button, so without these fallbacks the
+    // icons (➕ 🔍 ▶ ✏ 🗑 …) would be missing glyphs.
+    let mut medium_chain = vec!["kanit-medium".to_owned()];
+    if let Some(proportional) = fonts.families.get(&egui::FontFamily::Proportional) {
+        medium_chain.extend(proportional.iter().cloned());
     }
-    // No Thai font found: keep egui defaults (Thai glyphs may be missing).
-    "default (no Thai font found)".to_string()
+    fonts
+        .families
+        .insert(egui::FontFamily::Name("kanit-medium".into()), medium_chain);
+
+    ctx.set_fonts(fonts);
+    "Kanit (embedded: Regular + Medium)".to_string()
 }
 
-/// Dark theme with the CCS teal accent applied to selections and links.
+/// Light theme: CCS teal accent, rounded widgets, generous spacing, and larger
+/// Kanit text (medium weight on headings & buttons) for a softer, readable UI.
 fn setup_theme(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::dark();
-    visuals.selection.bg_fill = ACCENT.linear_multiply(0.55);
-    visuals.hyperlink_color = ACCENT;
+    use egui::{FontFamily, FontId, TextStyle};
+
+    let mut visuals = egui::Visuals::light();
+    visuals.selection.bg_fill = egui::Color32::from_rgb(0xB2, 0xEB, 0xF2); // light teal tint
+    visuals.selection.stroke.color = ACCENT_STRONG;
+    visuals.hyperlink_color = ACCENT_STRONG;
     visuals.widgets.hovered.bg_stroke.color = ACCENT;
+
+    // Rounder corners across widgets and windows to soften the UI.
+    let rounding = egui::Rounding::same(8.0);
+    for w in [
+        &mut visuals.widgets.noninteractive,
+        &mut visuals.widgets.inactive,
+        &mut visuals.widgets.hovered,
+        &mut visuals.widgets.active,
+        &mut visuals.widgets.open,
+    ] {
+        w.rounding = rounding;
+    }
+    visuals.window_rounding = egui::Rounding::same(10.0);
+    visuals.menu_rounding = egui::Rounding::same(8.0);
     ctx.set_visuals(visuals);
 
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-    style.spacing.button_padding = egui::vec2(10.0, 6.0);
+
+    // Larger Kanit text; medium weight for headings and buttons.
+    let medium = FontFamily::Name("kanit-medium".into());
+    style.text_styles = [
+        (TextStyle::Heading, FontId::new(24.0, medium.clone())),
+        (TextStyle::Body, FontId::new(16.0, FontFamily::Proportional)),
+        (TextStyle::Button, FontId::new(16.0, medium)),
+        (TextStyle::Small, FontId::new(12.5, FontFamily::Proportional)),
+        (TextStyle::Monospace, FontId::new(15.0, FontFamily::Monospace)),
+    ]
+    .into();
+
+    // More breathing room between and inside widgets.
+    style.spacing.item_spacing = egui::vec2(10.0, 9.0);
+    style.spacing.button_padding = egui::vec2(12.0, 8.0);
+    style.spacing.window_margin = egui::Margin::same(12.0);
     ctx.set_style(style);
 }

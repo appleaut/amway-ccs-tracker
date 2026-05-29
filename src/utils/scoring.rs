@@ -189,6 +189,13 @@ mod tests {
         assert_eq!(bonus_percent_for_pv(90_000), 18);
         assert_eq!(bonus_percent_for_pv(150_000), 21);
         assert_eq!(bonus_percent_for_pv(200_000), 21);
+        // One unit below each threshold must stay on the lower tier.
+        assert_eq!(bonus_percent_for_pv(4_999), 0);
+        assert_eq!(bonus_percent_for_pv(14_999), 6);
+        assert_eq!(bonus_percent_for_pv(29_999), 9);
+        assert_eq!(bonus_percent_for_pv(54_999), 12);
+        assert_eq!(bonus_percent_for_pv(89_999), 15);
+        assert_eq!(bonus_percent_for_pv(149_999), 18);
     }
 
     #[test]

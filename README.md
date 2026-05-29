@@ -13,6 +13,7 @@ Thai UI labels throughout; English code identifiers.
 |--------------|------------------------------------------|
 | Language     | Rust 2021                                |
 | GUI          | `egui` + `eframe` 0.28 (immediate mode)  |
+| Tables       | `egui_extras` 0.28 (`TableBuilder`)      |
 | Database     | `rusqlite` 0.31 (bundled SQLite, sync)   |
 | Date/time    | `chrono` 0.4                             |
 | Errors       | `thiserror` 1                            |
@@ -48,9 +49,11 @@ cargo test
 
 ## Thai font
 
-egui ships no Thai glyphs, so the app loads a Thai-capable system font at startup
-(tries `Leelawadee UI` → `Leelawadee` → `Tahoma` from `C:\Windows\Fonts`). The
-chosen font is shown on the Settings screen.
+egui ships no Thai glyphs, so the **Kanit** font (Google Fonts, SIL Open Font
+License) is embedded into the binary via `include_bytes!`
+(`assets/fonts/Kanit-Regular.ttf` + `Kanit-Medium.ttf`) and set as the primary
+face — Regular for body text, Medium for headings/buttons. No system-font
+dependency; the license is bundled at `assets/fonts/OFL.txt`.
 
 ## Project layout
 
@@ -69,10 +72,11 @@ src/
 │   └── enums.rs        Gender, NetworkCategory, ContactType, Rank, SponsorStep
 ├── ui/
 │   ├── dashboard.rs    summary cards + customer target + flow overview
-│   ├── prospect_list.rs   Sponsor List table (score-sorted, step badge, advance)
-│   ├── customer_list.rs   Customer Name List table
+│   ├── prospect_list.rs   Sponsor List table (sortable, step badge, advance)
+│   ├── customer_list.rs   Customer Name List table (sortable)
+│   ├── abo_list.rs        ABO management table (sortable: rank, upline, …)
 │   ├── followup.rs        per-ABO checklist with progress bar
-│   ├── downline_tree.rs   recursive network org chart
+│   ├── downline_tree.rs   radial node chart ("me" centre, draggable, auto-arrange)
 │   └── forms.rs           add/edit modal with scoring inputs
 └── utils/
     └── scoring.rs      score totals, rank/bonus tiers, transition validation + unit tests

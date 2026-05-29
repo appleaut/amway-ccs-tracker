@@ -106,10 +106,11 @@ CCS Conference (3).
 | Screen | Purpose |
 |--------|---------|
 | Dashboard | Cards: prospects, customers, ABOs, this-month conversions; customer 20-target bar; sponsor-flow overview |
-| Prospects | Sponsor List table, score-sorted, inline step badge, search, add/edit/delete, advance-step |
-| Customers | Customer Name List table, score-sorted, search, add/edit/delete |
+| Prospects | Sponsor List table, sortable columns, inline step badge, search, add/edit/delete, advance-step |
+| Customers | Customer Name List table, sortable columns, search, add/edit/delete |
+| ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
-| Network | Recursive upline→downline org chart of ABOs |
+| Network | Radial node chart — "me" at the centre, downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout |
 | Settings | DB location, font, total contacts, sample-data seeder, PV→rank/bonus calculator |
 
 ## E. Data flow — how a person moves through the pipeline

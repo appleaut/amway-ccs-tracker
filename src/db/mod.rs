@@ -15,7 +15,7 @@ use crate::error::Result;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
 use crate::models::enums::{ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
-use queries::{CustomerRow, ProspectRow};
+use queries::{AboRow, CustomerRow, ProspectRow};
 
 /// Owns the SQLite connection and exposes typed, validated operations.
 pub struct DbConnection {
@@ -104,5 +104,8 @@ impl DbConnection {
     }
     pub fn list_customer_rows(&self, q: &str) -> Result<Vec<CustomerRow>> {
         queries::list_customer_rows(&self.conn, q)
+    }
+    pub fn list_abo_rows(&self, q: &str) -> Result<Vec<AboRow>> {
+        queries::list_abo_rows(&self.conn, q)
     }
 }

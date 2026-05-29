@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::models::enums::ContactType;
-use crate::ui::{self, ACCENT};
+use crate::ui::{self, ACCENT_STRONG};
 
 pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(6.0);
@@ -20,24 +20,24 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let conversions = app.handle(r, 0);
 
     ui.horizontal_wrapped(|ui| {
-        ui::metric_card(ui, "ผู้มุ่งหวัง (Prospects)", &prospects.to_string(), ACCENT);
+        ui::metric_card(ui, "ผู้มุ่งหวัง (Prospects)", &prospects.to_string(), ACCENT_STRONG);
         ui::metric_card(
             ui,
             "ลูกค้า VIP (Customers)",
             &customers.to_string(),
-            egui::Color32::from_rgb(0x4C, 0xAF, 0x50),
+            egui::Color32::from_rgb(0x2E, 0x7D, 0x32), // green 800
         );
         ui::metric_card(
             ui,
             "นักธุรกิจ (ABO)",
             &abos.to_string(),
-            egui::Color32::from_rgb(0xFF, 0x98, 0x00),
+            egui::Color32::from_rgb(0xE6, 0x51, 0x00), // orange 900
         );
         ui::metric_card(
             ui,
             "เปลี่ยนสถานะเดือนนี้",
             &conversions.to_string(),
-            egui::Color32::from_rgb(0xE9, 0x1E, 0x63),
+            egui::Color32::from_rgb(0xAD, 0x14, 0x57), // pink 800
         );
     });
 

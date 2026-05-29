@@ -589,6 +589,34 @@ pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<Customer
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+/// An ABO plus the resolved name of its upline (sponsor), if any.
+pub struct AboRow {
+    pub contact: Contact,
+    pub upline_name: Option<String>,
+}
+
+pub fn list_abo_rows(conn: &Connection, query: &str) -> Result<Vec<AboRow>> {
+    let like = format!("%{query}%");
+    let sql = format!(
+        "SELECT {C}, up.name
+         FROM contacts c
+         LEFT JOIN contacts up ON up.id = c.sponsor_id
+         WHERE c.contact_type = 'ABO'
+           AND (c.name LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1 OR IFNULL(c.phone,'') LIKE ?1)
+         ORDER BY c.name ASC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([like], |row| {
+        let contact = row_to_contact(row)?;
+        let upline_name: Option<String> = row.get(14)?;
+        Ok(AboRow {
+            contact,
+            upline_name,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -696,6 +724,30 @@ mod tests {
         let mut ghost = sample_abo("Ghost", Rank::Koc);
         ghost.sponsor_id = Some(99_999);
         assert!(insert_contact(&conn, &ghost).is_err());
+    }
+
+    #[test]
+    fn abo_rows_resolve_upline_name_and_filter_by_type() {
+        let conn = mem();
+        let upline = insert_contact(&conn, &sample_abo("พิชัย", Rank::Cl21)).unwrap();
+        let mut child = sample_abo("วีระ", Rank::C1);
+        child.sponsor_id = Some(upline);
+        insert_contact(&conn, &child).unwrap();
+        // A prospect must NOT appear in the ABO list.
+        insert_contact(&conn, &sample_prospect("ผู้มุ่งหวัง")).unwrap();
+
+        let rows = list_abo_rows(&conn, "").unwrap();
+        assert_eq!(rows.len(), 2, "only ABOs are listed");
+
+        let child_row = rows.iter().find(|r| r.contact.name == "วีระ").unwrap();
+        assert_eq!(child_row.upline_name.as_deref(), Some("พิชัย"));
+
+        let root_row = rows.iter().find(|r| r.contact.name == "พิชัย").unwrap();
+        assert_eq!(root_row.upline_name, None);
+
+        // Search narrows the list.
+        let filtered = list_abo_rows(&conn, "วีระ").unwrap();
+        assert_eq!(filtered.len(), 1);
     }
 
     #[test]

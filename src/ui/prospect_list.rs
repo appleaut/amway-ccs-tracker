@@ -1,6 +1,8 @@
 //! Prospect list (Sponsor List): searchable, score-sorted table with inline
 //! sponsor-flow step and add/edit/delete/advance actions.
 
+use egui_extras::{Column, TableBuilder};
+
 use crate::app::AppState;
 use crate::models::enums::ContactType;
 use crate::ui::forms::{self, ContactForm};
@@ -33,41 +35,89 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(8.0);
 
     let r = app.db.list_prospect_rows(&app.search);
-    let rows = app.handle(r, Vec::new());
+    let mut rows = app.handle(r, Vec::new());
     if rows.is_empty() {
         ui.weak("— ไม่มีข้อมูลผู้มุ่งหวัง —");
         return;
     }
 
+    let mut sort = app.prospect_sort;
+    match sort.col {
+        0 => rows.sort_by(|a, b| {
+            a.contact
+                .display_name()
+                .to_lowercase()
+                .cmp(&b.contact.display_name().to_lowercase())
+        }),
+        1 => rows.sort_by(|a, b| a.contact.phone.cmp(&b.contact.phone)),
+        2 => rows.sort_by(|a, b| a.score_total.cmp(&b.score_total)),
+        3 => rows.sort_by(|a, b| a.current_step.as_int().cmp(&b.current_step.as_int())),
+        _ => {}
+    }
+    if !sort.ascending {
+        rows.reverse();
+    }
+
     let mut edit_id: Option<i64> = None;
     let mut delete_id: Option<i64> = None;
     let mut advance_id: Option<i64> = None;
+    let mut sort_clicked: Option<usize> = None;
 
-    egui::ScrollArea::vertical().show(ui, |ui| {
-        egui::Grid::new("prospect_table")
-            .striped(true)
-            .num_columns(5)
-            .spacing([14.0, 8.0])
-            .show(ui, |ui| {
-                for h in ["ชื่อ", "เบอร์โทร", "คะแนน", "ขั้นตอน (Sponsor Flow)", "จัดการ"] {
-                    ui.label(egui::RichText::new(h).strong());
-                }
-                ui.end_row();
-
-                for row in &rows {
-                    ui.label(row.contact.display_name());
-                    ui.label(row.contact.phone.clone().unwrap_or_default());
-                    ui.label(
-                        egui::RichText::new(row.score_total.to_string())
-                            .color(ui::score_color(row.score_total, 20))
-                            .strong(),
-                    );
-                    let step = row.current_step;
-                    ui.label(
-                        egui::RichText::new(format!("{} · {}", step.short(), step.label_th()))
-                            .small(),
-                    );
-                    ui.horizontal(|ui| {
+    TableBuilder::new(ui)
+        .striped(true)
+        .resizable(false)
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        .column(Column::remainder().at_least(160.0)) // ชื่อ
+        .column(Column::auto().at_least(110.0)) // เบอร์โทร
+        .column(Column::auto()) // คะแนน
+        .column(Column::remainder().at_least(200.0)) // ขั้นตอน
+        .column(Column::auto()) // จัดการ
+        .header(28.0, |mut header| {
+            let cols: [(&str, Option<usize>); 5] = [
+                ("ชื่อ", Some(0)),
+                ("เบอร์โทร", Some(1)),
+                ("คะแนน", Some(2)),
+                ("ขั้นตอน (Sponsor Flow)", Some(3)),
+                ("จัดการ", None),
+            ];
+            for (label, col) in cols {
+                header.col(|ui| match col {
+                    Some(c) => {
+                        let txt = format!("{label}{}", sort.arrow(c));
+                        if ui
+                            .add(egui::Button::new(egui::RichText::new(txt).strong()).frame(false))
+                            .clicked()
+                        {
+                            sort_clicked = Some(c);
+                        }
+                    }
+                    None => {
+                        ui.strong(label);
+                    }
+                });
+            }
+        })
+        .body(|mut body| {
+            for row in &rows {
+                body.row(30.0, |mut tr| {
+                    tr.col(|ui| {
+                        ui.label(row.contact.display_name());
+                    });
+                    tr.col(|ui| {
+                        ui.label(row.contact.phone.clone().unwrap_or_default());
+                    });
+                    tr.col(|ui| {
+                        ui.label(
+                            egui::RichText::new(row.score_total.to_string())
+                                .color(ui::score_color(row.score_total, 20))
+                                .strong(),
+                        );
+                    });
+                    tr.col(|ui| {
+                        let step = row.current_step;
+                        ui.label(format!("{} · {}", step.short(), step.label_th()));
+                    });
+                    tr.col(|ui| {
                         if ui.small_button("▶").on_hover_text("ขั้นต่อไป").clicked() {
                             advance_id = Some(row.contact.id);
                         }
@@ -78,11 +128,14 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                             delete_id = Some(row.contact.id);
                         }
                     });
-                    ui.end_row();
-                }
-            });
-    });
+                });
+            }
+        });
 
+    if let Some(c) = sort_clicked {
+        sort.toggle(c);
+        app.prospect_sort = sort;
+    }
     if let Some(id) = advance_id {
         advance_step(app, id);
     }
