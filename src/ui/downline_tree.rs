@@ -76,16 +76,36 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     }
     nodes[0].children = root_nodes;
 
-    let max_depth = nodes.iter().map(|n| n.depth).max().unwrap_or(0);
     let mut leaves = vec![0usize; nodes.len()];
     compute_leaves(&nodes, 0, &mut leaves);
 
-    let ring = 165.0_f32;
     let node_r = 30.0_f32;
-    let max_radius = max_depth as f32 * ring + node_r + 50.0;
+
+    // Choose ring spacing from the layout's own geometry: lay nodes out at unit
+    // spacing, find the closest pair, then scale so even that pair clears
+    // 2*node_r + gap. Because every position scales linearly with `ring`, this
+    // yields the most compact layout that still avoids overlap — small networks
+    // stay tight and fit one screen; dense ones grow (and gain scrollbars).
+    assign_pos(&mut nodes, 0, 0.0, TAU, 1.0, egui::Pos2::ZERO, &leaves);
+    let dmin = min_pair_dist(&nodes);
+    let ring = ((2.0 * node_r + 40.0) / dmin).clamp(90.0, 800.0);
+
+    // Size the canvas to the layout's actual bounding box (so a tree that leans
+    // to one side doesn't force needless scroll), and centre the chart within
+    // it. Small networks end up smaller than the viewport → no scrollbars.
+    let mut min = egui::pos2(f32::MAX, f32::MAX);
+    let mut max = egui::pos2(f32::MIN, f32::MIN);
+    for n in &nodes {
+        min.x = min.x.min(n.pos.x);
+        min.y = min.y.min(n.pos.y);
+        max.x = max.x.max(n.pos.x);
+        max.y = max.y.max(n.pos.y);
+    }
+    let unit_center = egui::vec2((min.x + max.x) * 0.5, (min.y + max.y) * 0.5);
+    let margin = node_r + 60.0;
     let avail = ui.available_size();
-    let side_w = (2.0 * max_radius).max(avail.x);
-    let side_h = (2.0 * max_radius).max(avail.y);
+    let side_w = ((max.x - min.x) * ring + 2.0 * margin).max(avail.x);
+    let side_h = ((max.y - min.y) * ring + 2.0 * margin).max(avail.y);
 
     let offsets = &mut app.node_offsets;
 
@@ -94,7 +114,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let (resp, painter) =
                 ui.allocate_painter(egui::vec2(side_w, side_h), egui::Sense::hover());
-            let center = resp.rect.center();
+            let center = resp.rect.center() - unit_center * ring;
 
             assign_pos(&mut nodes, 0, 0.0, TAU, ring, center, &leaves);
 
@@ -167,6 +187,25 @@ fn build_node(
     }
     nodes[my_idx].children = child_nodes;
     Some(my_idx)
+}
+
+/// Smallest distance between any two node centres at the current positions.
+/// Used to scale ring spacing so nodes never overlap.
+fn min_pair_dist(nodes: &[Node]) -> f32 {
+    let mut dmin = f32::INFINITY;
+    for i in 0..nodes.len() {
+        for j in (i + 1)..nodes.len() {
+            let d = nodes[i].pos.distance(nodes[j].pos);
+            if d < dmin {
+                dmin = d;
+            }
+        }
+    }
+    if dmin.is_finite() && dmin > 1e-3 {
+        dmin
+    } else {
+        1.0
+    }
 }
 
 /// Post-order leaf count per node (used to size angular sectors).
