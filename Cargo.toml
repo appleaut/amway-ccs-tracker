@@ -1,0 +1,19 @@
+[package]
+name = "amway_ccs_tracker"
+version = "0.1.0"
+edition = "2021"
+description = "Amway CCS Prospect & Downline Tracker"
+authors = ["Amway CCS Tracker"]
+
+[dependencies]
+eframe = "0.28"
+egui = "0.28"
+rusqlite = { version = "0.31", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[profile.release]
+opt-level = 2
+codegen-units = 1

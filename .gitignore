@@ -1,0 +1,11 @@
+# Rust build output
+/target
+
+# Backup / editor files
+**/*.rs.bk
+*.pdb
+
+# Local SQLite (app stores data in %APPDATA%, but ignore any stray local db)
+*.db
+*.db-journal
+*.sqlite

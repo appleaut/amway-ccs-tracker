@@ -1,0 +1,96 @@
+# Test Report — Amway CCS Tracker
+
+**Tester role.** Verifies the implementation compiles, the business rules are
+enforced in code (not just the UI), and the automated suite passes.
+
+## 1. Compile check
+
+| Command | Result |
+|---------|--------|
+| `cargo build` (debug) | ✅ Finished, **0 warnings, 0 errors** |
+| `cargo build --release --target x86_64-pc-windows-msvc` | ✅ Finished — `target\x86_64-pc-windows-msvc\release\amway_ccs_tracker.exe` (≈6.1 MB) |
+| `cargo test` | ✅ **17 passed; 0 failed** |
+
+Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
+(bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1.
+
+## 2. Automated tests written
+
+### Unit tests — `src/utils/scoring.rs`
+| Test | Asserts |
+|------|---------|
+| `prospect_total_is_sum_of_all_fields` | ProspectScore total = sum of 5 fields |
+| `customer_total_is_sum_of_all_fields` | CustomerScore total = sum of 3 fields |
+| `prospect_field_out_of_range_is_rejected` | field > max / < min → `Err` |
+| `customer_field_out_of_range_is_rejected` | field > max / < min → `Err` |
+| `rank_progression_thresholds` | 5000 PV = C1, 10k=CL, 20k=CL15, 30k=CL21 |
+| `bonus_percent_tiers` | 6/9/12/15/18/21% tier boundaries |
+| `rank_cannot_regress` | CL→C1 `Err`; KOC→C1, hold, advance `Ok` |
+| `sponsor_step_must_advance_sequentially` | Step1→Step5 `Err`; +1 / back / hold `Ok` |
+
+### DB integration tests — `src/db/queries.rs` (in-memory SQLite)
+| Test | Asserts |
+|------|---------|
+| `insert_then_read_back_matches` | insert → read back, fields match |
+| `update_sponsor_step_persists` | step advance persists + date recorded |
+| `follow_up_checkbox_toggle_persists` | toggle → save → reload retains state |
+| `delete_cascades_to_scores_and_follow_up` | delete contact cascades dependents |
+| `sponsor_must_reference_an_abo` | sponsor=Prospect/ghost `Err`; sponsor=ABO `Ok` |
+| `prospect_score_out_of_range_is_rejected` | relationship=11 `Err` |
+| `sponsor_step_cannot_skip` | set Step5 from Step1 `Err` |
+| `rank_cannot_regress_on_update` | CL→C1 `Err`; CL→CL21 `Ok` |
+| `changing_type_drops_opposing_score` | Prospect→Customer clears prospect score |
+
+## 3. Business-rule enforcement (verified in code, not just UI)
+
+| Rule | Enforced at |
+|------|-------------|
+| A person cannot be both Prospect AND Customer | `contact_type` enum + opposing-score drop in `update_contact` ([queries.rs:136](../src/db/queries.rs)) + type check in score upserts |
+| `sponsor_id` must reference an ABO (and not self) | `ensure_sponsor_valid` ([queries.rs:81](../src/db/queries.rs)), called by insert/update |
+| Prospect score ranges (1–10 / 1–5) | `validate_prospect_fields` ([scoring.rs:28](../src/utils/scoring.rs)) in `upsert_prospect_score` ([queries.rs:233](../src/db/queries.rs)) |
+| Customer score ranges | `validate_customer_fields` ([scoring.rs:61](../src/utils/scoring.rs)) |
+| Sponsor step advances sequentially | `validate_step_transition` ([scoring.rs:121](../src/utils/scoring.rs)) in `set_sponsor_step` ([queries.rs:399](../src/db/queries.rs)) |
+| Rank can only advance, not regress | `validate_rank_transition` ([scoring.rs:106](../src/utils/scoring.rs)) in `update_contact` |
+| Delete cascades to scores/follow-up | FK `ON DELETE CASCADE` + `PRAGMA foreign_keys=ON` ([schema.rs](../src/db/schema.rs), [db/mod.rs](../src/db/mod.rs)) |
+
+## 4. Error handling review
+
+* No `unwrap()` / `expect()` on production paths — all fallible ops return
+  `Result<T, AppError>`; `unwrap()` appears only inside `#[cfg(test)]`.
+* All DB access goes through the single `DbConnection` wrapper — no global/static
+  connections.
+* `AppError` (`thiserror`) wraps rusqlite/io/serde errors and carries validation
+  messages; the UI surfaces them in a dismissible status bar via
+  `AppState::set_error`.
+
+## 5. Manual QA checklist
+
+Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
+*Load sample data* to populate the views.
+
+- [ ] App launches without crash; Thai text renders (not boxes)
+- [ ] Add new prospect → appears in Prospects list
+- [ ] Score total updates live as score fields change in the form
+- [ ] Sponsor step badge shows; ▶ advances one step; skipping is impossible
+- [ ] Advancing past Step 8 shows "last step" message (no crash)
+- [ ] Add customer → appears in Customers list, sorted by score
+- [ ] Follow-up checkboxes persist after closing & reopening the app
+- [ ] Follow-up progress bar updates as items are checked
+- [ ] Network tree renders the seeded 3-level hierarchy (พิชัย → สมหญิง → วีระ)
+- [ ] Search box filters prospect/customer lists by name/phone in real time
+- [ ] Edit contact → changes saved and reflected in the list
+- [ ] Delete contact → removed from all views; its scores/follow-up gone
+- [ ] Settings PV calculator: 15000 → CL, 9% (sanity check of tier logic)
+- [ ] Try to set an ABO's sponsor to itself / a prospect → rejected with a message
+
+## 6. Notes / engineering decisions (flagged to Lead)
+
+* **Thai labels in the spec were OCR-garbled** (`ความมั่ยั่น`, `คันหา`, `คู้ค้า`,
+  `พฤกษิน`) and were corrected to standard Thai.
+* **Delete semantics**: scores/follow-up cascade, but a deleted sponsor sets the
+  downline's `sponsor_id` to NULL rather than deleting the downline — preserving
+  records is the safer business behaviour.
+* **Prospect-score max is 30** (10+5+5+5+5). The spec's "max 20" reflected a
+  different field weighting; the implementation uses the field ranges as written.
+* **Versions honored as pinned** (egui 0.28 / rusqlite 0.31); both build cleanly
+  on the Rust 1.95 / MSVC 2026 toolchain present.
