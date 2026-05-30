@@ -88,7 +88,7 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] Search box filters prospect/customer lists by name/phone in real time
 - [ ] Edit contact → changes saved and reflected in the list
 - [ ] Delete (🗑) on any table → confirm modal appears; Cancel keeps the row, ลบ removes it from all views with scores/follow-up gone
-- [ ] Settings PV calculator: 15000 → CL, 9% (sanity check of tier logic)
+- [ ] Settings calculator honours conditions: 15000 PV + 0 legs → C1 (9% bonus); 15000 PV + 3 C1-legs → CL
 - [ ] Try to set an ABO's sponsor to itself / a prospect → rejected with a message
 
 ## 6. Notes / engineering decisions (flagged to Lead)
@@ -105,7 +105,9 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 * **PV → rank/bonus logic verified** against the spec: rank thresholds
   (5,000=C1 / 10,000=CL / 20,000=CL15 / 30,000=CL21) and bonus tiers
   (5k=6% … 150k=21%). `bonus_percent_tiers` now also asserts one-unit-below each
-  threshold to rule out off-by-one. Note: rank uses Personal-Group-PV thresholds
-  while bonus uses the 6-tier table — they are intentionally different scales, so
-  e.g. 15,000 PV shows "CL, 9%". No 3% entry-tier is defined in the spec (real
-  Amway has one below 5,000 PV); easy to add if desired.
+  threshold to rule out off-by-one. Bonus % uses the 6-tier PV table; **rank now
+  honours the full conditions** (PPV threshold AND 3 downline legs at the prior
+  rank) via `qualified_rank`, used by both the ABO Rank Advisor and the Settings
+  calculator. So PV alone reaches at most C1 — e.g. 15,000 PV with no qualifying
+  legs is C1 (bonus 9%); CL needs 15,000≥10,000 PV **plus** 3 C1+ legs. No 3%
+  entry-tier is defined in the spec (real Amway has one below 5,000 PV).

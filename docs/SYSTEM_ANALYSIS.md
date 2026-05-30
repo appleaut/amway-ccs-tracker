@@ -115,7 +115,7 @@ CCS Conference (3).
 | ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
 | Network | Radial node chart — "me" at the centre, downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout |
-| Settings | DB location, font, total contacts, sample-data seeder, PV→rank/bonus calculator |
+| Settings | DB location, font, total contacts, sample-data seeder, rank/bonus calculator (PV + downline-leg counts → qualified rank, matching the full conditions) |
 
 ## E. Data flow — how a person moves through the pipeline
 

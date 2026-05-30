@@ -97,11 +97,6 @@ pub fn bonus_percent_for_pv(pv: i64) -> u8 {
     pct
 }
 
-/// Rank implied by a Personal Group PV figure (see [`Rank::from_ppv`]).
-pub fn rank_for_ppv(ppv: i64) -> Rank {
-    Rank::from_ppv(ppv)
-}
-
 /// Highest rank an ABO qualifies for under the "5 Steps to 21%" rules, given
 /// their PPV and how many direct downline legs reach each rank:
 ///
@@ -110,13 +105,15 @@ pub fn rank_for_ppv(ppv: i64) -> Rank {
 /// * CL15 — PPV ≥ 20,000 and ≥ 3 legs at CL or above
 /// * CL21 — PPV ≥ 30,000 and ≥ 3 legs at CL15 or above
 pub fn qualified_rank(ppv: i64, c1_legs: usize, cl_legs: usize, cl15_legs: usize) -> Rank {
-    if ppv >= 30_000 && cl15_legs >= 3 {
+    // Highest rank PPV alone allows, then enforce the 3-leg requirement for CL+.
+    let by_ppv = Rank::from_ppv(ppv);
+    if by_ppv >= Rank::Cl21 && cl15_legs >= 3 {
         Rank::Cl21
-    } else if ppv >= 20_000 && cl_legs >= 3 {
+    } else if by_ppv >= Rank::Cl15 && cl_legs >= 3 {
         Rank::Cl15
-    } else if ppv >= 10_000 && c1_legs >= 3 {
+    } else if by_ppv >= Rank::Cl && c1_legs >= 3 {
         Rank::Cl
-    } else if ppv >= 5_000 {
+    } else if by_ppv >= Rank::C1 {
         Rank::C1
     } else {
         Rank::Koc
@@ -203,13 +200,15 @@ mod tests {
 
     #[test]
     fn rank_progression_thresholds() {
-        assert_eq!(rank_for_ppv(0), Rank::Koc);
-        assert_eq!(rank_for_ppv(4_999), Rank::Koc);
-        assert_eq!(rank_for_ppv(5_000), Rank::C1); // 5000 PV => C1
-        assert_eq!(rank_for_ppv(10_000), Rank::Cl); // CL
-        assert_eq!(rank_for_ppv(20_000), Rank::Cl15); // CL15
-        assert_eq!(rank_for_ppv(30_000), Rank::Cl21); // CL21
-        assert_eq!(rank_for_ppv(999_999), Rank::Cl21);
+        // With ample downline legs, the PPV thresholds alone drive the rank.
+        let n = 9;
+        assert_eq!(qualified_rank(0, n, n, n), Rank::Koc);
+        assert_eq!(qualified_rank(4_999, n, n, n), Rank::Koc);
+        assert_eq!(qualified_rank(5_000, n, n, n), Rank::C1); // 5000 PV => C1
+        assert_eq!(qualified_rank(10_000, n, n, n), Rank::Cl); // CL
+        assert_eq!(qualified_rank(20_000, n, n, n), Rank::Cl15); // CL15
+        assert_eq!(qualified_rank(30_000, n, n, n), Rank::Cl21); // CL21
+        assert_eq!(qualified_rank(999_999, n, n, n), Rank::Cl21);
     }
 
     #[test]

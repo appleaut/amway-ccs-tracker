@@ -30,6 +30,10 @@ pub struct AppState {
     pub font_name: String,
     /// PV figure typed into the Settings rank calculator.
     pub pv_input: String,
+    /// Downline leg counts entered in the Settings rank calculator.
+    pub pv_legs_c1: usize,
+    pub pv_legs_cl: usize,
+    pub pv_legs_cl15: usize,
     /// Per-table sort state.
     pub prospect_sort: ui::SortSpec,
     pub customer_sort: ui::SortSpec,
@@ -62,6 +66,9 @@ impl AppState {
             db_location: path.display().to_string(),
             font_name,
             pv_input: String::new(),
+            pv_legs_c1: 0,
+            pv_legs_cl: 0,
+            pv_legs_cl15: 0,
             prospect_sort: ui::SortSpec::new(2, false), // score, descending
             customer_sort: ui::SortSpec::new(2, false), // score, descending
             abo_sort: ui::SortSpec::new(0, true),       // name, ascending
@@ -197,27 +204,49 @@ impl AppState {
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(8.0);
-        ui.label(egui::RichText::new("คำนวณระดับ/โบนัสจากยอด PV").strong());
+        ui.label(egui::RichText::new("คำนวณระดับ/โบนัสตามเงื่อนไข").strong());
         ui.horizontal(|ui| {
-            ui.label("PV:");
+            ui.label("ยอด PV:");
             ui.add(
                 egui::TextEdit::singleline(&mut self.pv_input)
                     .hint_text("เช่น 15000")
-                    .desired_width(140.0),
+                    .desired_width(120.0),
             );
+        });
+        ui.horizontal(|ui| {
+            ui.label("สายงานดาวน์ไลน์:");
+            ui.label("C1+");
+            ui.add(egui::DragValue::new(&mut self.pv_legs_c1).range(0..=99));
+            ui.label("CL+");
+            ui.add(egui::DragValue::new(&mut self.pv_legs_cl).range(0..=99));
+            ui.label("CL15+");
+            ui.add(egui::DragValue::new(&mut self.pv_legs_cl15).range(0..=99));
         });
         let trimmed = self.pv_input.trim();
         if let Ok(pv) = trimmed.parse::<i64>() {
-            let rank = crate::utils::scoring::rank_for_ppv(pv);
+            let rank = crate::utils::scoring::qualified_rank(
+                pv,
+                self.pv_legs_c1,
+                self.pv_legs_cl,
+                self.pv_legs_cl15,
+            );
             let bonus = crate::utils::scoring::bonus_percent_for_pv(pv);
             ui.label(
                 egui::RichText::new(format!(
-                    "ระดับ (Rank): {}  •  โบนัส (Bonus): {}%",
+                    "ระดับที่ผ่านเงื่อนไข: {}  •  โบนัส: {}%",
                     rank.as_str(),
                     bonus
                 ))
                 .color(ACCENT_STRONG)
                 .strong(),
+            );
+            ui.label(
+                egui::RichText::new(
+                    "เงื่อนไข: C1 = PV>=5,000 | CL = >=10,000 + 3 สาย C1+ | \
+                     CL15 = >=20,000 + 3 สาย CL+ | CL21 = >=30,000 + 3 สาย CL15+",
+                )
+                .small()
+                .weak(),
             );
         } else if !trimmed.is_empty() {
             ui.weak("กรุณากรอกตัวเลข PV (numeric only)");
