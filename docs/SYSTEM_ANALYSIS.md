@@ -80,6 +80,12 @@ A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
 26 booleans + `updated_at`: BK1 (9), BK2 (7), C1 Qualification (7),
 CCS Conference (3).
 
+### activities — interaction history (many per contact, schema v3)
+`id`, `contact_id` (FK→contacts, ON DELETE CASCADE), `kind` (ActivityKind:
+Demo / Promotion / Plan / FollowUp / Meeting / Other), `note` (free text),
+`created_at`. Logs what was done with a prospect/customer/ABO (สาธิตสินค้า,
+บอกโปรโมชั่น, พูดแผน, …).
+
 ### Rank progression & PV tiers (reference logic, in `utils/scoring.rs`)
 * Rank from Personal Group PV: `<5,000`→KOC, `5,000`→C1, `10,000`→CL,
   `20,000`→CL15, `30,000`→CL21.
@@ -115,6 +121,7 @@ CCS Conference (3).
 | ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
 | Network | Radial node chart — "me" at the centre, downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout |
+| Activity Log | Per-contact interaction-history modal (📝 from any list): add/view/delete entries by kind + free note |
 | Settings | DB location, font, total contacts, sample-data seeder, rank/bonus calculator (PV + downline-leg counts → qualified rank, matching the full conditions) |
 
 ## E. Data flow — how a person moves through the pipeline

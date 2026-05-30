@@ -372,11 +372,11 @@ fn abo_section(ui: &mut egui::Ui, f: &mut ContactForm, abos: &[Contact], editing
                 .sponsor_id
                 .and_then(|sid| abos.iter().find(|a| a.id == sid))
                 .map(|a| a.display_name())
-                .unwrap_or_else(|| "— ไม่มี —".to_string());
+                .unwrap_or_else(|| "ฉัน (ME)".to_string());
             egui::ComboBox::from_id_source("sponsor_cb")
                 .selected_text(current)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut f.sponsor_id, None, "— ไม่มี —");
+                    ui.selectable_value(&mut f.sponsor_id, None, "ฉัน (ME)");
                     for a in abos {
                         // An ABO cannot sponsor itself.
                         if Some(a.id) == editing_id {

@@ -12,8 +12,11 @@ use chrono::{DateTime, Local, NaiveDate};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use crate::error::{AppError, Result};
+use crate::models::activity::Activity;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank, SponsorStep};
+use crate::models::enums::{
+    ActivityKind, ContactType, Gender, NetworkCategory, Rank, SponsorStep,
+};
 use crate::models::followup::FollowUpSheet;
 use crate::utils::scoring;
 
@@ -245,6 +248,49 @@ pub fn abo_leg_counts(conn: &Connection, abo_id: i64) -> Result<(usize, usize, u
         }
     }
     Ok((c1, cl, cl15))
+}
+
+// ---------------------------------------------------------------------------
+// Activity history
+// ---------------------------------------------------------------------------
+
+/// Log an interaction with a contact; returns the new activity id.
+pub fn add_activity(
+    conn: &Connection,
+    contact_id: i64,
+    kind: ActivityKind,
+    note: &str,
+) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![contact_id, kind.as_str(), note, Local::now().to_rfc3339()],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// All activities for a contact, newest first.
+pub fn list_activities(conn: &Connection, contact_id: i64) -> Result<Vec<Activity>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, kind, note, created_at
+         FROM activities WHERE contact_id = ?1
+         ORDER BY created_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map([contact_id], |row| {
+        let kind: String = row.get(1)?;
+        let created: String = row.get(3)?;
+        Ok(Activity {
+            id: row.get(0)?,
+            kind: ActivityKind::from_db(&kind),
+            note: row.get(2)?,
+            created_at: parse_dt(&created),
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+pub fn delete_activity(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM activities WHERE id = ?1", [id])?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +864,28 @@ mod tests {
         // PPV persists.
         update_ppv(&conn, up, 12_345).unwrap();
         assert_eq!(get_contact(&conn, up).unwrap().ppv, 12_345);
+    }
+
+    #[test]
+    fn activities_add_list_delete_and_cascade() {
+        let conn = mem();
+        let id = insert_contact(&conn, &sample_prospect("Act")).unwrap();
+        let a1 = add_activity(&conn, id, ActivityKind::Demo, "สาธิต Nutrilite").unwrap();
+        add_activity(&conn, id, ActivityKind::Promotion, "").unwrap();
+
+        let list = list_activities(&conn, id).unwrap();
+        assert_eq!(list.len(), 2);
+        // Newest first; the id DESC tiebreaker keeps the later insert on top.
+        assert_eq!(list[0].kind, ActivityKind::Promotion);
+        assert_eq!(list[1].kind, ActivityKind::Demo);
+        assert_eq!(list[1].note, "สาธิต Nutrilite");
+
+        delete_activity(&conn, a1).unwrap();
+        assert_eq!(list_activities(&conn, id).unwrap().len(), 1);
+
+        // Deleting the contact cascades its activities.
+        delete_contact(&conn, id).unwrap();
+        assert_eq!(list_activities(&conn, id).unwrap().len(), 0);
     }
 
     #[test]

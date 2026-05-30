@@ -65,6 +65,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut edit_id: Option<i64> = None;
     let mut delete_req: Option<(i64, String)> = None;
     let mut advisor_id: Option<i64> = None;
+    let mut activity_id: Option<i64> = None;
     let mut sort_clicked: Option<usize> = None;
 
     TableBuilder::new(ui)
@@ -115,11 +116,15 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         ui.label(egui::RichText::new(rank).color(ACCENT_STRONG).strong());
                     });
                     tr.col(|ui| {
-                        ui.label(row.upline_name.clone().unwrap_or_else(|| "—".to_string()));
+                        // No stored sponsor means this ABO is directly under me.
+                        ui.label(row.upline_name.clone().unwrap_or_else(|| "ฉัน (ME)".to_string()));
                     });
                     tr.col(|ui| {
                         if ui.small_button("📊").on_hover_text("ประเมินระดับ").clicked() {
                             advisor_id = Some(row.contact.id);
+                        }
+                        if ui.small_button("📝").on_hover_text("ประวัติการติดต่อ").clicked() {
+                            activity_id = Some(row.contact.id);
                         }
                         if ui.small_button("✏").on_hover_text("แก้ไข").clicked() {
                             edit_id = Some(row.contact.id);
@@ -138,6 +143,10 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     }
     if let Some(id) = advisor_id {
         app.rank_advisor = Some(id);
+    }
+    if let Some(id) = activity_id {
+        app.activity_contact = Some(id);
+        app.activity_note.clear();
     }
     if let Some(id) = edit_id {
         forms::open_edit(app, id);

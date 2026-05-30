@@ -58,6 +58,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
     let mut edit_id: Option<i64> = None;
     let mut delete_req: Option<(i64, String)> = None;
+    let mut activity_id: Option<i64> = None;
     let mut sort_clicked: Option<usize> = None;
 
     TableBuilder::new(ui)
@@ -109,6 +110,9 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         );
                     });
                     tr.col(|ui| {
+                        if ui.small_button("📝").on_hover_text("ประวัติการติดต่อ").clicked() {
+                            activity_id = Some(row.contact.id);
+                        }
                         if ui.small_button("✏").on_hover_text("แก้ไข").clicked() {
                             edit_id = Some(row.contact.id);
                         }
@@ -123,6 +127,10 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     if let Some(c) = sort_clicked {
         sort.toggle(c);
         app.customer_sort = sort;
+    }
+    if let Some(id) = activity_id {
+        app.activity_contact = Some(id);
+        app.activity_note.clear();
     }
     if let Some(id) = edit_id {
         forms::open_edit(app, id);

@@ -6,6 +6,7 @@
 //!   the 8-step sponsor-flow status.
 //! * [`followup`] — the BK1 / BK2 / C1 follow-up checklist per ABO.
 
+pub mod activity;
 pub mod contact;
 pub mod enums;
 pub mod followup;

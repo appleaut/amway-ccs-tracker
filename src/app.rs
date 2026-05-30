@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::db::DbConnection;
 use crate::error::{AppError, Result};
 use crate::models::contact::{Contact, CustomerScore, ProspectScore};
-use crate::models::enums::{ContactType, NetworkCategory, Rank, SponsorStep};
+use crate::models::enums::{ActivityKind, ContactType, NetworkCategory, Rank, SponsorStep};
 use crate::ui::forms::ContactForm;
 use crate::ui::{self, View, ACCENT, ACCENT_STRONG};
 
@@ -45,6 +45,10 @@ pub struct AppState {
     pub pending_delete: Option<(i64, String)>,
     /// ABO id currently open in the Rank Advisor modal.
     pub rank_advisor: Option<i64>,
+    /// Contact whose activity log is open, plus the new-entry draft.
+    pub activity_contact: Option<i64>,
+    pub activity_kind: ActivityKind,
+    pub activity_note: String,
 }
 
 impl AppState {
@@ -75,6 +79,9 @@ impl AppState {
             node_offsets: HashMap::new(),
             pending_delete: None,
             rank_advisor: None,
+            activity_contact: None,
+            activity_kind: ActivityKind::Demo,
+            activity_note: String::new(),
         })
     }
 
@@ -362,6 +369,7 @@ impl eframe::App for AppState {
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
+        ui::activity_log::render(self, ctx);
     }
 }
 

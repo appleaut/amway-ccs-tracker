@@ -4,6 +4,7 @@
 //! main loop can dispatch on the active [`View`] without borrow gymnastics.
 
 pub mod abo_list;
+pub mod activity_log;
 pub mod confirm;
 pub mod customer_list;
 pub mod dashboard;

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 2;
+const CURRENT_VERSION: i64 = 3;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -103,6 +103,20 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     if version < 2 {
         // Personal Point Value, used for ABO rank qualification.
         conn.execute_batch("ALTER TABLE contacts ADD COLUMN ppv INTEGER NOT NULL DEFAULT 0;")?;
+    }
+
+    if version < 3 {
+        // Activity history: a log of interactions with each contact.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS activities (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+                kind       TEXT    NOT NULL,
+                note       TEXT    NOT NULL DEFAULT '',
+                created_at TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_activities_contact ON activities(contact_id);",
+        )?;
     }
 
     if version != CURRENT_VERSION {

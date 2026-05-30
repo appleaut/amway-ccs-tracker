@@ -12,8 +12,9 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use crate::error::Result;
+use crate::models::activity::Activity;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::enums::{ContactType, SponsorStep};
+use crate::models::enums::{ActivityKind, ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use queries::{AboRow, CustomerRow, ProspectRow};
 
@@ -62,6 +63,15 @@ impl DbConnection {
     }
     pub fn abo_leg_counts(&self, abo_id: i64) -> Result<(usize, usize, usize)> {
         queries::abo_leg_counts(&self.conn, abo_id)
+    }
+    pub fn add_activity(&self, contact_id: i64, kind: ActivityKind, note: &str) -> Result<i64> {
+        queries::add_activity(&self.conn, contact_id, kind, note)
+    }
+    pub fn list_activities(&self, contact_id: i64) -> Result<Vec<Activity>> {
+        queries::list_activities(&self.conn, contact_id)
+    }
+    pub fn delete_activity(&self, id: i64) -> Result<()> {
+        queries::delete_activity(&self.conn, id)
     }
 
     // --- scores -----------------------------------------------------------

@@ -69,7 +69,8 @@ src/
 ├── models/
 │   ├── contact.rs      Contact, ProspectScore, CustomerScore, SponsorFlowStatus
 │   ├── followup.rs     FollowUpSheet (26-item BK1/BK2/C1/Conference checklist)
-│   └── enums.rs        Gender, NetworkCategory, ContactType, Rank, SponsorStep
+│   ├── activity.rs     Activity (per-contact interaction history)
+│   └── enums.rs        Gender, NetworkCategory, ContactType, Rank, SponsorStep, ActivityKind
 ├── ui/
 │   ├── dashboard.rs    summary cards + customer target + flow overview
 │   ├── prospect_list.rs   Sponsor List table (sortable, editable step, advance)
@@ -79,7 +80,8 @@ src/
 │   ├── downline_tree.rs   radial node chart ("me" centre, draggable, auto-arrange)
 │   ├── forms.rs           add/edit modal with scoring inputs
 │   ├── confirm.rs         shared delete-confirmation modal
-│   └── rank_advisor.rs    ABO rank assessment (PPV + downline legs → qualified rank)
+│   ├── rank_advisor.rs    ABO rank assessment (PPV + downline legs → qualified rank)
+│   └── activity_log.rs    per-contact interaction history (📝, all tables)
 └── utils/
     └── scoring.rs      score totals, rank/bonus tiers, transition validation + unit tests
 ```

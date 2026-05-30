@@ -62,6 +62,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut delete_req: Option<(i64, String)> = None;
     let mut advance_id: Option<i64> = None;
     let mut step_change: Option<(i64, SponsorStep)> = None;
+    let mut activity_id: Option<i64> = None;
     let mut sort_clicked: Option<usize> = None;
 
     TableBuilder::new(ui)
@@ -135,6 +136,9 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         if ui.small_button("▶").on_hover_text("ขั้นต่อไป").clicked() {
                             advance_id = Some(row.contact.id);
                         }
+                        if ui.small_button("📝").on_hover_text("ประวัติการติดต่อ").clicked() {
+                            activity_id = Some(row.contact.id);
+                        }
                         if ui.small_button("✏").on_hover_text("แก้ไข").clicked() {
                             edit_id = Some(row.contact.id);
                         }
@@ -158,6 +162,10 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             Ok(()) => app.set_status(format!("ตั้งขั้นตอนเป็น {} · {}", step.short(), step.label_th())),
             Err(e) => app.set_error(e),
         }
+    }
+    if let Some(id) = activity_id {
+        app.activity_contact = Some(id);
+        app.activity_note.clear();
     }
     if let Some(id) = edit_id {
         forms::open_edit(app, id);
