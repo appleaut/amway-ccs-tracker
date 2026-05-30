@@ -49,7 +49,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 .cmp(&b.contact.display_name().to_lowercase())
         }),
         1 => rows.sort_by(|a, b| a.contact.phone.cmp(&b.contact.phone)),
-        2 => rows.sort_by(|a, b| a.score_total.cmp(&b.score_total)),
+        2 => rows.sort_by_key(|a| a.score_total),
         _ => {}
     }
     if !sort.ascending {

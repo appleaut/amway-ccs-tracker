@@ -133,12 +133,12 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             assign_pos(&mut nodes, 0, 0.0, TAU, ring, center, &leaves);
 
             // Apply stored offsets and let the user drag each node.
-            for i in 0..nodes.len() {
-                let key = match nodes[i].contact {
+            for node in &mut nodes {
+                let key = match node.contact {
                     Some(ci) => abos[ci].id,
                     None => ME_KEY,
                 };
-                let base = nodes[i].pos;
+                let base = node.pos;
                 let off = offsets.get(&key).copied().unwrap_or(egui::Vec2::ZERO);
                 let mut pos = base + off;
 
@@ -153,7 +153,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 } else if node_resp.hovered() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 }
-                nodes[i].pos = pos;
+                node.pos = pos;
             }
 
             // Edges first (so nodes draw on top).

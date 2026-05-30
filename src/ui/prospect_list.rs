@@ -50,8 +50,8 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 .cmp(&b.contact.display_name().to_lowercase())
         }),
         1 => rows.sort_by(|a, b| a.contact.phone.cmp(&b.contact.phone)),
-        2 => rows.sort_by(|a, b| a.score_total.cmp(&b.score_total)),
-        3 => rows.sort_by(|a, b| a.current_step.as_int().cmp(&b.current_step.as_int())),
+        2 => rows.sort_by_key(|a| a.score_total),
+        3 => rows.sort_by_key(|a| a.current_step.as_int()),
         _ => {}
     }
     if !sort.ascending {
