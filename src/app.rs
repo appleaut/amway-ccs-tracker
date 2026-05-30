@@ -37,6 +37,8 @@ pub struct AppState {
     /// User-dragged position offsets for downline-chart nodes, keyed by contact
     /// id (the central "me" node uses `i64::MIN`). Empty = pure auto-layout.
     pub node_offsets: HashMap<i64, egui::Vec2>,
+    /// Contact awaiting delete confirmation: `(id, display name)`.
+    pub pending_delete: Option<(i64, String)>,
 }
 
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             customer_sort: ui::SortSpec::new(2, false), // score, descending
             abo_sort: ui::SortSpec::new(0, true),       // name, ascending
             node_offsets: HashMap::new(),
+            pending_delete: None,
         })
     }
 
@@ -323,8 +326,9 @@ impl eframe::App for AppState {
             View::Settings => self.settings(ui),
         });
 
-        // Modal form renders on top of whatever view is active.
+        // Modals render on top of whatever view is active.
         ui::forms::render(self, ctx);
+        ui::confirm::render(self, ctx);
     }
 }
 

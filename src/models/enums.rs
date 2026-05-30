@@ -222,6 +222,17 @@ pub enum SponsorStep {
 }
 
 impl SponsorStep {
+    pub const ALL: [SponsorStep; 8] = [
+        SponsorStep::Step1,
+        SponsorStep::Step2,
+        SponsorStep::Step3,
+        SponsorStep::Step4,
+        SponsorStep::Step5,
+        SponsorStep::Step6,
+        SponsorStep::Step7,
+        SponsorStep::Step8,
+    ];
+
     /// 1-based step number as stored in the database.
     pub fn as_int(self) -> u8 {
         match self {

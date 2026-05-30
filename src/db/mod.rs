@@ -81,6 +81,9 @@ impl DbConnection {
     pub fn set_sponsor_step(&self, id: i64, step: SponsorStep) -> Result<()> {
         queries::set_sponsor_step(&self.conn, id, step)
     }
+    pub fn set_sponsor_step_direct(&self, id: i64, step: SponsorStep) -> Result<()> {
+        queries::set_sponsor_step_direct(&self.conn, id, step)
+    }
 
     // --- follow-up --------------------------------------------------------
 

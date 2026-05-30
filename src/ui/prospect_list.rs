@@ -4,7 +4,7 @@
 use egui_extras::{Column, TableBuilder};
 
 use crate::app::AppState;
-use crate::models::enums::ContactType;
+use crate::models::enums::{ContactType, SponsorStep};
 use crate::ui::forms::{self, ContactForm};
 use crate::ui::{self, ACCENT};
 
@@ -59,8 +59,9 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     }
 
     let mut edit_id: Option<i64> = None;
-    let mut delete_id: Option<i64> = None;
+    let mut delete_req: Option<(i64, String)> = None;
     let mut advance_id: Option<i64> = None;
+    let mut step_change: Option<(i64, SponsorStep)> = None;
     let mut sort_clicked: Option<usize> = None;
 
     TableBuilder::new(ui)
@@ -114,8 +115,21 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         );
                     });
                     tr.col(|ui| {
-                        let step = row.current_step;
-                        ui.label(format!("{} · {}", step.short(), step.label_th()));
+                        let mut chosen = row.current_step;
+                        egui::ComboBox::from_id_source(("flowstep", row.contact.id))
+                            .selected_text(format!("{} · {}", chosen.short(), chosen.label_th()))
+                            .show_ui(ui, |ui| {
+                                for s in SponsorStep::ALL {
+                                    ui.selectable_value(
+                                        &mut chosen,
+                                        s,
+                                        format!("{} · {}", s.short(), s.label_th()),
+                                    );
+                                }
+                            });
+                        if chosen != row.current_step {
+                            step_change = Some((row.contact.id, chosen));
+                        }
                     });
                     tr.col(|ui| {
                         if ui.small_button("▶").on_hover_text("ขั้นต่อไป").clicked() {
@@ -125,7 +139,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                             edit_id = Some(row.contact.id);
                         }
                         if ui.small_button("🗑").on_hover_text("ลบ").clicked() {
-                            delete_id = Some(row.contact.id);
+                            delete_req = Some((row.contact.id, row.contact.display_name()));
                         }
                     });
                 });
@@ -139,14 +153,17 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     if let Some(id) = advance_id {
         advance_step(app, id);
     }
+    if let Some((id, step)) = step_change {
+        match app.db.set_sponsor_step_direct(id, step) {
+            Ok(()) => app.set_status(format!("ตั้งขั้นตอนเป็น {} · {}", step.short(), step.label_th())),
+            Err(e) => app.set_error(e),
+        }
+    }
     if let Some(id) = edit_id {
         forms::open_edit(app, id);
     }
-    if let Some(id) = delete_id {
-        match app.db.delete_contact(id) {
-            Ok(()) => app.set_status("ลบรายชื่อเรียบร้อย"),
-            Err(e) => app.set_error(e),
-        }
+    if let Some(req) = delete_req {
+        app.pending_delete = Some(req);
     }
 }
 

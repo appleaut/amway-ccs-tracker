@@ -57,7 +57,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     }
 
     let mut edit_id: Option<i64> = None;
-    let mut delete_id: Option<i64> = None;
+    let mut delete_req: Option<(i64, String)> = None;
     let mut sort_clicked: Option<usize> = None;
 
     TableBuilder::new(ui)
@@ -113,7 +113,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                             edit_id = Some(row.contact.id);
                         }
                         if ui.small_button("🗑").on_hover_text("ลบ").clicked() {
-                            delete_id = Some(row.contact.id);
+                            delete_req = Some((row.contact.id, row.contact.display_name()));
                         }
                     });
                 });
@@ -127,10 +127,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     if let Some(id) = edit_id {
         forms::open_edit(app, id);
     }
-    if let Some(id) = delete_id {
-        match app.db.delete_contact(id) {
-            Ok(()) => app.set_status("ลบรายชื่อเรียบร้อย"),
-            Err(e) => app.set_error(e),
-        }
+    if let Some(req) = delete_req {
+        app.pending_delete = Some(req);
     }
 }

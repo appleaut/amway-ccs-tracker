@@ -9,7 +9,7 @@ enforced in code (not just the UI), and the automated suite passes.
 |---------|--------|
 | `cargo build` (debug) | ✅ Finished, **0 warnings, 0 errors** |
 | `cargo build --release --target x86_64-pc-windows-msvc` | ✅ Finished — `target\x86_64-pc-windows-msvc\release\amway_ccs_tracker.exe` (≈6.1 MB) |
-| `cargo test` | ✅ **18 passed; 0 failed** |
+| `cargo test` | ✅ **19 passed; 0 failed** |
 
 Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 (bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1; plus
@@ -38,7 +38,8 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `delete_cascades_to_scores_and_follow_up` | delete contact cascades dependents |
 | `sponsor_must_reference_an_abo` | sponsor=Prospect/ghost `Err`; sponsor=ABO `Ok` |
 | `prospect_score_out_of_range_is_rejected` | relationship=11 `Err` |
-| `sponsor_step_cannot_skip` | set Step5 from Step1 `Err` |
+| `sponsor_step_cannot_skip` | guided advance: set Step5 from Step1 `Err` |
+| `sponsor_step_direct_allows_jumps_for_manual_edit` | manual edit: jump to Step6 / back to Step2 `Ok`, dates kept |
 | `rank_cannot_regress_on_update` | CL→C1 `Err`; CL→CL21 `Ok` |
 | `changing_type_drops_opposing_score` | Prospect→Customer clears prospect score |
 | `abo_rows_resolve_upline_name_and_filter_by_type` | ABO list shows only ABOs + resolves upline name; search filters |
@@ -73,7 +74,7 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] App launches without crash; Thai text renders (not boxes)
 - [ ] Add new prospect → appears in Prospects list
 - [ ] Score total updates live as score fields change in the form
-- [ ] Sponsor step badge shows; ▶ advances one step; skipping is impossible
+- [ ] Sponsor step dropdown sets any step (jump/back) for editing; ▶ still advances one step at a time
 - [ ] Advancing past Step 8 shows "last step" message (no crash)
 - [ ] Add customer → appears in Customers list, sorted by score
 - [ ] ABO page lists business partners with rank + upline; add/edit/delete works
@@ -83,7 +84,7 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] Clicking a table column header sorts it; clicking again flips direction (▲/▼)
 - [ ] Search box filters prospect/customer lists by name/phone in real time
 - [ ] Edit contact → changes saved and reflected in the list
-- [ ] Delete contact → removed from all views; its scores/follow-up gone
+- [ ] Delete (🗑) on any table → confirm modal appears; Cancel keeps the row, ลบ removes it from all views with scores/follow-up gone
 - [ ] Settings PV calculator: 15000 → CL, 9% (sanity check of tier logic)
 - [ ] Try to set an ABO's sponsor to itself / a prospect → rejected with a message
 

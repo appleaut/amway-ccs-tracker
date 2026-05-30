@@ -404,6 +404,21 @@ pub fn set_sponsor_step(conn: &Connection, contact_id: i64, step: SponsorStep) -
     save_sponsor_flow(conn, &flow)
 }
 
+/// Set a prospect's flow step to *any* value (manual correction from the UI).
+/// Unlike [`set_sponsor_step`], this does not enforce sequential advancement, so
+/// the user can jump to, or step back to, any point in the flow. Today's date is
+/// still recorded for the chosen step.
+pub fn set_sponsor_step_direct(
+    conn: &Connection,
+    contact_id: i64,
+    step: SponsorStep,
+) -> Result<()> {
+    let mut flow = get_sponsor_flow(conn, contact_id)?;
+    flow.current_step = step;
+    flow.step_date.insert(step, Local::now().date_naive());
+    save_sponsor_flow(conn, &flow)
+}
+
 // ---------------------------------------------------------------------------
 // Follow-up sheet
 // ---------------------------------------------------------------------------
@@ -765,6 +780,20 @@ mod tests {
         let id = insert_contact(&conn, &sample_prospect("Skip")).unwrap();
         // current is Step1; jumping straight to Step5 must fail.
         assert!(set_sponsor_step(&conn, id, SponsorStep::Step5).is_err());
+    }
+
+    #[test]
+    fn sponsor_step_direct_allows_jumps_for_manual_edit() {
+        let conn = mem();
+        let id = insert_contact(&conn, &sample_prospect("Edit")).unwrap();
+        // Manual edit may jump forward past several steps...
+        set_sponsor_step_direct(&conn, id, SponsorStep::Step6).unwrap();
+        assert_eq!(get_sponsor_flow(&conn, id).unwrap().current_step, SponsorStep::Step6);
+        // ...and step back down.
+        set_sponsor_step_direct(&conn, id, SponsorStep::Step2).unwrap();
+        let flow = get_sponsor_flow(&conn, id).unwrap();
+        assert_eq!(flow.current_step, SponsorStep::Step2);
+        assert!(flow.step_date.contains_key(&SponsorStep::Step6));
     }
 
     #[test]

@@ -106,7 +106,7 @@ CCS Conference (3).
 | Screen | Purpose |
 |--------|---------|
 | Dashboard | Cards: prospects, customers, ABOs, this-month conversions; customer 20-target bar; sponsor-flow overview |
-| Prospects | Sponsor List table, sortable columns, inline step badge, search, add/edit/delete, advance-step |
+| Prospects | Sponsor List table, sortable columns, inline editable step (dropdown sets any step) + ▶ advance, search, add/edit/delete |
 | Customers | Customer Name List table, sortable columns, search, add/edit/delete |
 | ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
