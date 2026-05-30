@@ -64,6 +64,15 @@ impl DbConnection {
     pub fn abo_leg_counts(&self, abo_id: i64) -> Result<(usize, usize, usize)> {
         queries::abo_leg_counts(&self.conn, abo_id)
     }
+    pub fn me_leg_counts(&self) -> Result<(usize, usize, usize)> {
+        queries::me_leg_counts(&self.conn)
+    }
+    pub fn get_me_ppv(&self) -> Result<i64> {
+        queries::get_me_ppv(&self.conn)
+    }
+    pub fn set_me_ppv(&self, ppv: i64) -> Result<()> {
+        queries::set_me_ppv(&self.conn, ppv)
+    }
     pub fn add_activity(&self, contact_id: i64, kind: ActivityKind, note: &str) -> Result<i64> {
         queries::add_activity(&self.conn, contact_id, kind, note)
     }

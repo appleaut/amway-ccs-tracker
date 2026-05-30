@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 3;
+const CURRENT_VERSION: i64 = 4;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -116,6 +116,18 @@ pub fn migrate(conn: &Connection) -> Result<()> {
                 created_at TEXT    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_activities_contact ON activities(contact_id);",
+        )?;
+    }
+
+    if version < 4 {
+        // Key/value store for app-level settings. "Me" is the implicit network
+        // root and has no contact row, so my own PPV (for self rank assessment)
+        // lives here under the key 'me_ppv'.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );",
         )?;
     }
 

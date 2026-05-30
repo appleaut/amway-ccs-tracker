@@ -77,10 +77,10 @@ src/
 │   ├── customer_list.rs   Customer Name List table (sortable)
 │   ├── abo_list.rs        ABO management table (sortable) + 📊 Rank Advisor
 │   ├── followup.rs        per-ABO checklist with progress bar
-│   ├── downline_tree.rs   radial node chart ("me" centre, draggable, auto-arrange)
+│   ├── downline_tree.rs   radial node chart ("me" centre shows my rank, draggable, auto-arrange, self Rank Advisor)
 │   ├── forms.rs           add/edit modal with scoring inputs
 │   ├── confirm.rs         shared delete-confirmation modal
-│   ├── rank_advisor.rs    ABO rank assessment (PPV + downline legs → qualified rank)
+│   ├── rank_advisor.rs    rank assessment for an ABO and for "me" (PPV + downline legs → qualified rank)
 │   └── activity_log.rs    per-contact interaction history (📝, all tables)
 └── utils/
     └── scoring.rs      score totals, rank/bonus tiers, transition validation + unit tests

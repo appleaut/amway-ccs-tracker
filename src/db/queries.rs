@@ -250,6 +250,51 @@ pub fn abo_leg_counts(conn: &Connection, abo_id: i64) -> Result<(usize, usize, u
     Ok((c1, cl, cl15))
 }
 
+/// Count *my own* direct downline legs — ABOs sponsored by "me" (i.e. with no
+/// stored sponsor) — that reach at least C1 / CL / CL15. The root-level mirror
+/// of [`abo_leg_counts`], used by the self Rank Advisor.
+pub fn me_leg_counts(conn: &Connection) -> Result<(usize, usize, usize)> {
+    let mut stmt = conn
+        .prepare("SELECT rank FROM contacts WHERE sponsor_id IS NULL AND contact_type = 'ABO'")?;
+    let ranks = stmt.query_map([], |row| {
+        let s: Option<String> = row.get(0)?;
+        Ok(s)
+    })?;
+    let (mut c1, mut cl, mut cl15) = (0usize, 0usize, 0usize);
+    for r in ranks {
+        let rank = r?.map(|s| Rank::from_db(&s)).unwrap_or(Rank::Koc);
+        let o = rank.ordinal();
+        if o >= Rank::C1.ordinal() {
+            c1 += 1;
+        }
+        if o >= Rank::Cl.ordinal() {
+            cl += 1;
+        }
+        if o >= Rank::Cl15.ordinal() {
+            cl15 += 1;
+        }
+    }
+    Ok((c1, cl, cl15))
+}
+
+/// Read my own Personal PV from the `meta` store (0 if never set).
+pub fn get_me_ppv(conn: &Connection) -> Result<i64> {
+    let v: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key = 'me_ppv'", [], |r| r.get(0))
+        .optional()?;
+    Ok(v.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0))
+}
+
+/// Persist my own Personal PV into the `meta` store.
+pub fn set_me_ppv(conn: &Connection, ppv: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO meta (key, value) VALUES ('me_ppv', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![ppv.to_string()],
+    )?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Activity history
 // ---------------------------------------------------------------------------
@@ -864,6 +909,32 @@ mod tests {
         // PPV persists.
         update_ppv(&conn, up, 12_345).unwrap();
         assert_eq!(get_contact(&conn, up).unwrap().ppv, 12_345);
+    }
+
+    #[test]
+    fn me_leg_counts_and_ppv_round_trip() {
+        let conn = mem();
+        // Three ABOs directly under me (no sponsor): two CL, one C1.
+        for (n, r) in [("a", Rank::Cl), ("b", Rank::Cl), ("c", Rank::C1)] {
+            insert_contact(&conn, &sample_abo(n, r)).unwrap();
+        }
+        // A deeper ABO (sponsored by one of mine) must NOT count as my own leg.
+        let parent = list_abos(&conn).unwrap()[0].id;
+        let mut deep = sample_abo("deep", Rank::Cl21);
+        deep.sponsor_id = Some(parent);
+        insert_contact(&conn, &deep).unwrap();
+
+        let (c1, cl, cl15) = me_leg_counts(&conn).unwrap();
+        assert_eq!(c1, 3); // a, b, c are all C1 or above
+        assert_eq!(cl, 2); // a, b
+        assert_eq!(cl15, 0); // the only CL15+ (deep) is not a direct leg of mine
+
+        // My PPV defaults to 0, then round-trips (upsert overwrites).
+        assert_eq!(get_me_ppv(&conn).unwrap(), 0);
+        set_me_ppv(&conn, 22_000).unwrap();
+        assert_eq!(get_me_ppv(&conn).unwrap(), 22_000);
+        set_me_ppv(&conn, 31_000).unwrap();
+        assert_eq!(get_me_ppv(&conn).unwrap(), 31_000);
     }
 
     #[test]

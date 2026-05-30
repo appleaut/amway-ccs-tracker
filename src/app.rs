@@ -45,6 +45,8 @@ pub struct AppState {
     pub pending_delete: Option<(i64, String)>,
     /// ABO id currently open in the Rank Advisor modal.
     pub rank_advisor: Option<i64>,
+    /// Whether the self ("ฉัน / ME") Rank Advisor modal is open.
+    pub me_advisor: bool,
     /// Contact whose activity log is open, plus the new-entry draft.
     pub activity_contact: Option<i64>,
     pub activity_kind: ActivityKind,
@@ -79,6 +81,7 @@ impl AppState {
             node_offsets: HashMap::new(),
             pending_delete: None,
             rank_advisor: None,
+            me_advisor: false,
             activity_contact: None,
             activity_kind: ActivityKind::Demo,
             activity_note: String::new(),
@@ -369,6 +372,7 @@ impl eframe::App for AppState {
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
+        ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);
     }
 }

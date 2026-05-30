@@ -86,6 +86,12 @@ Demo / Promotion / Plan / FollowUp / Meeting / Other), `note` (free text),
 `created_at`. Logs what was done with a prospect/customer/ABO (สาธิตสินค้า,
 บอกโปรโมชั่น, พูดแผน, …).
 
+### meta — app-level key/value store (schema v4)
+`key` (PK), `value`. Holds settings that have no contact row — notably
+`me_ppv`, my own Personal PV, used to assess *my* ("ฉัน / ME") rank. "Me" is the
+implicit network root, so my direct downline are the ABOs with `sponsor_id`
+NULL, and my rank is derived the same way an ABO's is.
+
 ### Rank progression & PV tiers (reference logic, in `utils/scoring.rs`)
 * Rank from Personal Group PV: `<5,000`→KOC, `5,000`→C1, `10,000`→CL,
   `20,000`→CL15, `30,000`→CL21.
@@ -120,7 +126,7 @@ Demo / Promotion / Plan / FollowUp / Meeting / Other), `note` (free text),
 | Customers | Customer Name List table, sortable columns, search, add/edit/delete |
 | ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
-| Network | Radial node chart — "me" at the centre, downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout |
+| Network | Radial node chart — "me" at the centre (showing my own qualified rank), downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout, and a 📊 button that opens my self Rank Advisor (my direct legs + my PPV → my qualified rank) |
 | Activity Log | Per-contact interaction-history modal (📝 from any list): add/view/delete entries by kind + free note |
 | Settings | DB location, font, total contacts, sample-data seeder, rank/bonus calculator (PV + downline-leg counts → qualified rank, matching the full conditions) |
 

@@ -11,6 +11,7 @@ use std::f32::consts::TAU;
 use crate::app::AppState;
 use crate::models::contact::Contact;
 use crate::ui::{ACCENT, ACCENT_STRONG};
+use crate::utils::scoring;
 
 /// Sentinel key for the central "me" node in the offsets map.
 const ME_KEY: i64 = i64::MIN;
@@ -44,9 +45,22 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         if ui.button("จัดผังอัตโนมัติ (Auto-arrange)").clicked() {
             app.node_offsets.clear();
         }
+        if ui
+            .add(egui::Button::new("📊 ประเมินระดับของฉัน").fill(ACCENT))
+            .on_hover_text("ประเมินระดับของฉัน (ME) จากดาวน์ไลน์ตรง + PPV")
+            .clicked()
+        {
+            app.me_advisor = true;
+        }
         ui.weak("ลาก node เพื่อย้าย • เลื่อนดูด้วยสกรอลล์ / ล้อเมาส์");
     });
     ui.add_space(4.0);
+
+    // My own qualified rank (from direct downline legs + my PPV), shown inside
+    // the central node.
+    let (mc1, mcl, mcl15) = app.db.me_leg_counts().unwrap_or((0, 0, 0));
+    let me_ppv = app.db.get_me_ppv().unwrap_or(0);
+    let me_inside = scoring::qualified_rank(me_ppv, mc1, mcl, mcl15).as_str().to_string();
 
     // Build sponsor → children adjacency. A node is a "root" (direct downline of
     // me) when it has no sponsor, or its sponsor is not an ABO in the set.
@@ -152,7 +166,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
             // Nodes.
             for n in &nodes {
-                draw_node(&painter, n, &abos, node_r);
+                draw_node(&painter, n, &abos, node_r, &me_inside);
             }
         });
 }
@@ -252,14 +266,14 @@ fn assign_pos(
     }
 }
 
-fn draw_node(painter: &egui::Painter, node: &Node, abos: &[Contact], r: f32) {
+fn draw_node(painter: &egui::Painter, node: &Node, abos: &[Contact], r: f32, me_inside: &str) {
     let name_color = egui::Color32::from_gray(40);
     let (fill, inside_text, inside_color, below) = match node.contact {
         None => (
             ACCENT,
-            "ME".to_string(),
+            me_inside.to_string(),
             egui::Color32::WHITE,
-            "ฉัน".to_string(),
+            "ฉัน (ME)".to_string(),
         ),
         Some(i) => {
             let c = &abos[i];
