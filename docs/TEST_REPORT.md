@@ -9,7 +9,7 @@ enforced in code (not just the UI), and the automated suite passes.
 |---------|--------|
 | `cargo build` (debug) | ✅ Finished, **0 warnings, 0 errors** |
 | `cargo build --release --target x86_64-pc-windows-msvc` | ✅ Finished — `target\x86_64-pc-windows-msvc\release\amway_ccs_tracker.exe` (≈6.1 MB) |
-| `cargo test` | ✅ **19 passed; 0 failed** |
+| `cargo test` | ✅ **21 passed; 0 failed** |
 
 Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 (bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1; plus
@@ -27,6 +27,7 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `rank_progression_thresholds` | 5000 PV = C1, 10k=CL, 20k=CL15, 30k=CL21 |
 | `bonus_percent_tiers` | 6/9/12/15/18/21% tier boundaries |
 | `rank_cannot_regress` | CL→C1 `Err`; KOC→C1, hold, advance `Ok` |
+| `qualified_rank_needs_both_ppv_and_legs` | rank advisor: PPV + 3-leg conditions per "5 Steps to 21%" |
 | `sponsor_step_must_advance_sequentially` | Step1→Step5 `Err`; +1 / back / hold `Ok` |
 
 ### DB integration tests — `src/db/queries.rs` (in-memory SQLite)
@@ -43,6 +44,7 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `rank_cannot_regress_on_update` | CL→C1 `Err`; CL→CL21 `Ok` |
 | `changing_type_drops_opposing_score` | Prospect→Customer clears prospect score |
 | `abo_rows_resolve_upline_name_and_filter_by_type` | ABO list shows only ABOs + resolves upline name; search filters |
+| `abo_leg_counts_and_ppv_round_trip` | counts C1+/CL+/CL15+ direct legs; PPV persists |
 
 ## 3. Business-rule enforcement (verified in code, not just UI)
 
@@ -78,6 +80,7 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] Advancing past Step 8 shows "last step" message (no crash)
 - [ ] Add customer → appears in Customers list, sorted by score
 - [ ] ABO page lists business partners with rank + upline; add/edit/delete works
+- [ ] ABO 📊 Rank Advisor: edit PPV, see leg counts + qualified rank + condition checklist; ▲ applies an advancing rank
 - [ ] Follow-up checkboxes persist after closing & reopening the app
 - [ ] Follow-up progress bar updates as items are checked
 - [ ] Network chart renders the seeded hierarchy radially (ฉัน → พิชัย → สมหญิง → วีระ)

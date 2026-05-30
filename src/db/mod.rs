@@ -57,6 +57,12 @@ impl DbConnection {
     pub fn delete_contact(&self, id: i64) -> Result<()> {
         queries::delete_contact(&self.conn, id)
     }
+    pub fn update_ppv(&self, id: i64, ppv: i64) -> Result<()> {
+        queries::update_ppv(&self.conn, id, ppv)
+    }
+    pub fn abo_leg_counts(&self, abo_id: i64) -> Result<(usize, usize, usize)> {
+        queries::abo_leg_counts(&self.conn, abo_id)
+    }
 
     // --- scores -----------------------------------------------------------
 

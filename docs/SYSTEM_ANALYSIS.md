@@ -52,6 +52,7 @@ A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
 | sponsor_id | INTEGER? FK→contacts | upline ABO |
 | created_at | TEXT | RFC3339 |
 | notes | TEXT? | |
+| ppv | INTEGER | Personal Point Value (ABO rank qualification); added in schema v2 |
 
 ### prospect_scores — Sponsor List scoring (1:1 with a Prospect)
 `relationship_closeness` (1–10), `financial_stability`, `leadership`,
@@ -84,6 +85,9 @@ CCS Conference (3).
   `20,000`→CL15, `30,000`→CL21.
 * Bonus % tiers: 5,000=6%, 15,000=9%, 30,000=12%, 55,000=15%, 90,000=18%,
   150,000=21%.
+* Rank qualification (Rank Advisor): besides PPV, a rank needs 3 direct downline
+  legs at the prior rank — CL needs PPV ≥ 10,000 + 3×(C1 or above); CL15 needs
+  ≥ 20,000 + 3×(CL+); CL21 needs ≥ 30,000 + 3×(CL15+). C1 needs only PPV ≥ 5,000.
 
 ## C. Business rules
 
@@ -108,7 +112,7 @@ CCS Conference (3).
 | Dashboard | Cards: prospects, customers, ABOs, this-month conversions; customer 20-target bar; sponsor-flow overview |
 | Prospects | Sponsor List table, sortable columns, inline editable step (dropdown sets any step) + ▶ advance, search, add/edit/delete |
 | Customers | Customer Name List table, sortable columns, search, add/edit/delete |
-| ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete |
+| ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
 | Network | Radial node chart — "me" at the centre, downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout |
 | Settings | DB location, font, total contacts, sample-data seeder, PV→rank/bonus calculator |

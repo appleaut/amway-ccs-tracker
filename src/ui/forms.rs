@@ -32,6 +32,7 @@ pub struct ContactForm {
     // ABO-only
     pub rank: Rank,
     pub sponsor_id: Option<i64>,
+    pub ppv: i64,
 
     pub notes: String,
 
@@ -65,6 +66,7 @@ impl Default for ContactForm {
             contact_type: ContactType::Prospect,
             rank: Rank::Koc,
             sponsor_id: None,
+            ppv: 0,
             notes: String::new(),
             p_rel: 1,
             p_fin_stab: 1,
@@ -116,6 +118,7 @@ impl ContactForm {
             contact_type: c.contact_type,
             rank: c.rank.unwrap_or(Rank::Koc),
             sponsor_id: c.sponsor_id,
+            ppv: c.ppv,
             notes: c.notes.clone().unwrap_or_default(),
             p_rel: p.relationship_closeness,
             p_fin_stab: p.financial_stability,
@@ -360,6 +363,10 @@ fn abo_section(ui: &mut egui::Ui, f: &mut ContactForm, abos: &[Contact], editing
                 });
             ui.end_row();
 
+            ui.label("ยอดส่วนตัว (PPV)");
+            ui.add(egui::DragValue::new(&mut f.ppv).range(0..=10_000_000).speed(100.0));
+            ui.end_row();
+
             ui.label("อัพไลน์ (Sponsor)");
             let current = f
                 .sponsor_id
@@ -431,6 +438,7 @@ fn save_form(app: &mut AppState) -> Result<String> {
     } else {
         None
     };
+    c.ppv = f.ppv;
     c.notes = opt(&f.notes);
 
     let display = c.display_name();

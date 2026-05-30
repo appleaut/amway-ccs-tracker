@@ -21,7 +21,7 @@ use crate::utils::scoring;
 /// other tables (which share column names such as `notes`) without ambiguity.
 const C: &str = "c.id, c.name, c.nickname, c.phone, c.line_id, c.age, c.gender, \
                  c.address, c.network_category, c.contact_type, c.rank, \
-                 c.sponsor_id, c.created_at, c.notes";
+                 c.sponsor_id, c.created_at, c.notes, c.ppv";
 
 // ---------------------------------------------------------------------------
 // Row mapping helpers
@@ -33,7 +33,7 @@ fn parse_dt(s: &str) -> DateTime<Local> {
         .unwrap_or_else(|_| Local::now())
 }
 
-/// Map the first 14 columns of a row (in `C` order) into a [`Contact`].
+/// Map the first 15 columns of a row (in `C` order) into a [`Contact`].
 fn row_to_contact(row: &Row) -> rusqlite::Result<Contact> {
     let age: Option<i64> = row.get(5)?;
     let gender: String = row.get(6)?;
@@ -57,6 +57,7 @@ fn row_to_contact(row: &Row) -> rusqlite::Result<Contact> {
         sponsor_id: row.get(11)?,
         created_at: parse_dt(&created),
         notes: row.get(13)?,
+        ppv: row.get(14)?,
     })
 }
 
@@ -109,8 +110,8 @@ pub fn insert_contact(conn: &Connection, c: &Contact) -> Result<i64> {
     conn.execute(
         "INSERT INTO contacts
             (name, nickname, phone, line_id, age, gender, address,
-             network_category, contact_type, rank, sponsor_id, created_at, notes)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             network_category, contact_type, rank, sponsor_id, created_at, notes, ppv)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             c.name,
             c.nickname,
@@ -125,6 +126,7 @@ pub fn insert_contact(conn: &Connection, c: &Contact) -> Result<i64> {
             c.sponsor_id,
             c.created_at.to_rfc3339(),
             c.notes,
+            c.ppv,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -145,8 +147,8 @@ pub fn update_contact(conn: &Connection, c: &Contact) -> Result<()> {
         "UPDATE contacts SET
             name = ?1, nickname = ?2, phone = ?3, line_id = ?4, age = ?5,
             gender = ?6, address = ?7, network_category = ?8, contact_type = ?9,
-            rank = ?10, sponsor_id = ?11, notes = ?12
-         WHERE id = ?13",
+            rank = ?10, sponsor_id = ?11, notes = ?12, ppv = ?13
+         WHERE id = ?14",
         params![
             c.name,
             c.nickname,
@@ -160,6 +162,7 @@ pub fn update_contact(conn: &Connection, c: &Contact) -> Result<()> {
             c.rank.map(|r| r.as_str()),
             c.sponsor_id,
             c.notes,
+            c.ppv,
             c.id,
         ],
     )?;
@@ -210,6 +213,38 @@ pub fn list_abos(conn: &Connection) -> Result<Vec<Contact>> {
 pub fn delete_contact(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM contacts WHERE id = ?1", [id])?;
     Ok(())
+}
+
+/// Update only the Personal Point Value (PPV) of a contact.
+pub fn update_ppv(conn: &Connection, id: i64, ppv: i64) -> Result<()> {
+    conn.execute("UPDATE contacts SET ppv = ?1 WHERE id = ?2", params![ppv, id])?;
+    Ok(())
+}
+
+/// Count an ABO's direct downline legs that reach at least C1 / CL / CL15.
+/// Returns `(c1_plus, cl_plus, cl15_plus)` — used by the rank advisor.
+pub fn abo_leg_counts(conn: &Connection, abo_id: i64) -> Result<(usize, usize, usize)> {
+    let mut stmt =
+        conn.prepare("SELECT rank FROM contacts WHERE sponsor_id = ?1 AND contact_type = 'ABO'")?;
+    let ranks = stmt.query_map([abo_id], |row| {
+        let s: Option<String> = row.get(0)?;
+        Ok(s)
+    })?;
+    let (mut c1, mut cl, mut cl15) = (0usize, 0usize, 0usize);
+    for r in ranks {
+        let rank = r?.map(|s| Rank::from_db(&s)).unwrap_or(Rank::Koc);
+        let o = rank.ordinal();
+        if o >= Rank::C1.ordinal() {
+            c1 += 1;
+        }
+        if o >= Rank::Cl.ordinal() {
+            cl += 1;
+        }
+        if o >= Rank::Cl15.ordinal() {
+            cl15 += 1;
+        }
+    }
+    Ok((c1, cl, cl15))
 }
 
 // ---------------------------------------------------------------------------
@@ -565,8 +600,8 @@ pub fn list_prospect_rows(conn: &Connection, query: &str) -> Result<Vec<Prospect
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
-        let total: i64 = row.get(14)?;
-        let step: i64 = row.get(15)?;
+        let total: i64 = row.get(15)?;
+        let step: i64 = row.get(16)?;
         Ok(ProspectRow {
             contact,
             score_total: total as u8,
@@ -595,7 +630,7 @@ pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<Customer
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
-        let total: i64 = row.get(14)?;
+        let total: i64 = row.get(15)?;
         Ok(CustomerRow {
             contact,
             score_total: total as u8,
@@ -623,7 +658,7 @@ pub fn list_abo_rows(conn: &Connection, query: &str) -> Result<Vec<AboRow>> {
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
-        let upline_name: Option<String> = row.get(14)?;
+        let upline_name: Option<String> = row.get(15)?;
         Ok(AboRow {
             contact,
             upline_name,
@@ -763,6 +798,26 @@ mod tests {
         // Search narrows the list.
         let filtered = list_abo_rows(&conn, "วีระ").unwrap();
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn abo_leg_counts_and_ppv_round_trip() {
+        let conn = mem();
+        let up = insert_contact(&conn, &sample_abo("Up", Rank::Cl21)).unwrap();
+        // Three direct downlines: two CL, one C1.
+        for (n, r) in [("a", Rank::Cl), ("b", Rank::Cl), ("c", Rank::C1)] {
+            let mut child = sample_abo(n, r);
+            child.sponsor_id = Some(up);
+            insert_contact(&conn, &child).unwrap();
+        }
+        let (c1, cl, cl15) = abo_leg_counts(&conn, up).unwrap();
+        assert_eq!(c1, 3); // all three are C1 or above
+        assert_eq!(cl, 2); // two are CL or above
+        assert_eq!(cl15, 0);
+
+        // PPV persists.
+        update_ppv(&conn, up, 12_345).unwrap();
+        assert_eq!(get_contact(&conn, up).unwrap().ppv, 12_345);
     }
 
     #[test]

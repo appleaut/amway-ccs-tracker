@@ -102,6 +102,39 @@ pub fn rank_for_ppv(ppv: i64) -> Rank {
     Rank::from_ppv(ppv)
 }
 
+/// Highest rank an ABO qualifies for under the "5 Steps to 21%" rules, given
+/// their PPV and how many direct downline legs reach each rank:
+///
+/// * C1  — PPV ≥ 5,000
+/// * CL  — PPV ≥ 10,000 and ≥ 3 legs at C1 or above
+/// * CL15 — PPV ≥ 20,000 and ≥ 3 legs at CL or above
+/// * CL21 — PPV ≥ 30,000 and ≥ 3 legs at CL15 or above
+pub fn qualified_rank(ppv: i64, c1_legs: usize, cl_legs: usize, cl15_legs: usize) -> Rank {
+    if ppv >= 30_000 && cl15_legs >= 3 {
+        Rank::Cl21
+    } else if ppv >= 20_000 && cl_legs >= 3 {
+        Rank::Cl15
+    } else if ppv >= 10_000 && c1_legs >= 3 {
+        Rank::Cl
+    } else if ppv >= 5_000 {
+        Rank::C1
+    } else {
+        Rank::Koc
+    }
+}
+
+/// Requirement to reach `rank`: `(min PPV, required leg rank, required leg count)`.
+/// `None` for KOC (entry level). C1 has no leg requirement (count 0).
+pub fn rank_requirement(rank: Rank) -> Option<(i64, Rank, usize)> {
+    match rank {
+        Rank::Koc => None,
+        Rank::C1 => Some((5_000, Rank::C1, 0)),
+        Rank::Cl => Some((10_000, Rank::C1, 3)),
+        Rank::Cl15 => Some((20_000, Rank::Cl, 3)),
+        Rank::Cl21 => Some((30_000, Rank::Cl15, 3)),
+    }
+}
+
 /// A rank may only advance or hold — never regress.
 pub fn validate_rank_transition(from: Rank, to: Rank) -> Result<()> {
     if to.ordinal() < from.ordinal() {
@@ -177,6 +210,23 @@ mod tests {
         assert_eq!(rank_for_ppv(20_000), Rank::Cl15); // CL15
         assert_eq!(rank_for_ppv(30_000), Rank::Cl21); // CL21
         assert_eq!(rank_for_ppv(999_999), Rank::Cl21);
+    }
+
+    #[test]
+    fn qualified_rank_needs_both_ppv_and_legs() {
+        // PPV alone gets you to C1.
+        assert_eq!(qualified_rank(5_000, 0, 0, 0), Rank::C1);
+        assert_eq!(qualified_rank(4_999, 9, 9, 9), Rank::Koc);
+        // CL needs PPV 10k AND 3 C1+ legs — missing either keeps you at C1.
+        assert_eq!(qualified_rank(10_000, 2, 0, 0), Rank::C1);
+        assert_eq!(qualified_rank(9_000, 3, 0, 0), Rank::C1);
+        assert_eq!(qualified_rank(10_000, 3, 0, 0), Rank::Cl);
+        // CL15 needs 20k + 3 CL legs.
+        assert_eq!(qualified_rank(20_000, 3, 2, 0), Rank::Cl);
+        assert_eq!(qualified_rank(20_000, 3, 3, 0), Rank::Cl15);
+        // CL21 needs 30k + 3 CL15 legs.
+        assert_eq!(qualified_rank(30_000, 5, 5, 2), Rank::Cl15);
+        assert_eq!(qualified_rank(30_000, 5, 5, 3), Rank::Cl21);
     }
 
     #[test]

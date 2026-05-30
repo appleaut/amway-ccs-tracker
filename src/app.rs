@@ -39,6 +39,8 @@ pub struct AppState {
     pub node_offsets: HashMap<i64, egui::Vec2>,
     /// Contact awaiting delete confirmation: `(id, display name)`.
     pub pending_delete: Option<(i64, String)>,
+    /// ABO id currently open in the Rank Advisor modal.
+    pub rank_advisor: Option<i64>,
 }
 
 impl AppState {
@@ -65,6 +67,7 @@ impl AppState {
             abo_sort: ui::SortSpec::new(0, true),       // name, ascending
             node_offsets: HashMap::new(),
             pending_delete: None,
+            rank_advisor: None,
         })
     }
 
@@ -140,7 +143,7 @@ impl AppState {
                     clear = true;
                 }
             } else if let Some(s) = status {
-                ui.colored_label(ACCENT_STRONG, format!("✓ {s}"));
+                ui.colored_label(ACCENT_STRONG, format!("✅ {s}"));
             } else {
                 ui.label(
                     egui::RichText::new("พร้อมใช้งาน • Amway CCS Tracker v0.1")
@@ -329,6 +332,7 @@ impl eframe::App for AppState {
         // Modals render on top of whatever view is active.
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
+        ui::rank_advisor::render(self, ctx);
     }
 }
 

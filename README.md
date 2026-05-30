@@ -72,12 +72,14 @@ src/
 │   └── enums.rs        Gender, NetworkCategory, ContactType, Rank, SponsorStep
 ├── ui/
 │   ├── dashboard.rs    summary cards + customer target + flow overview
-│   ├── prospect_list.rs   Sponsor List table (sortable, step badge, advance)
+│   ├── prospect_list.rs   Sponsor List table (sortable, editable step, advance)
 │   ├── customer_list.rs   Customer Name List table (sortable)
-│   ├── abo_list.rs        ABO management table (sortable: rank, upline, …)
+│   ├── abo_list.rs        ABO management table (sortable) + 📊 Rank Advisor
 │   ├── followup.rs        per-ABO checklist with progress bar
 │   ├── downline_tree.rs   radial node chart ("me" centre, draggable, auto-arrange)
-│   └── forms.rs           add/edit modal with scoring inputs
+│   ├── forms.rs           add/edit modal with scoring inputs
+│   ├── confirm.rs         shared delete-confirmation modal
+│   └── rank_advisor.rs    ABO rank assessment (PPV + downline legs → qualified rank)
 └── utils/
     └── scoring.rs      score totals, rank/bonus tiers, transition validation + unit tests
 ```

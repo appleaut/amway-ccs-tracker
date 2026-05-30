@@ -28,6 +28,8 @@ pub struct Contact {
     pub sponsor_id: Option<i64>,
     pub created_at: DateTime<Local>,
     pub notes: Option<String>,
+    /// Personal Point Value (ยอดส่วนตัว) — used for ABO rank qualification.
+    pub ppv: i64,
 }
 
 impl Contact {
@@ -49,6 +51,7 @@ impl Contact {
             sponsor_id: None,
             created_at: Local::now(),
             notes: None,
+            ppv: 0,
         }
     }
 
