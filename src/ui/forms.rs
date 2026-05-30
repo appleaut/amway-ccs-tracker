@@ -11,6 +11,27 @@ use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank};
 use crate::ui::{ACCENT, ACCENT_STRONG};
 use crate::utils::scoring;
 
+/// Shared column widths so every label/input pair lines up across all sections.
+const LABEL_W: f32 = 150.0;
+const FIELD_W: f32 = 320.0;
+
+/// One form row: a fixed-width label cell followed by the input widget, laid out
+/// in a single `horizontal` so the row's height is self-contained. (A `ComboBox`
+/// inside `egui::Grid` under-reports its height, which makes the following row
+/// overlap it — laying rows out manually avoids that.)
+fn field_row(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(LABEL_W, ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.label(label);
+            },
+        );
+        add(ui);
+    });
+}
+
 /// Editable, string-friendly mirror of a contact and its score, bound directly
 /// to widgets. Numbers that the user types (age) are kept as text and parsed on
 /// save so partial input doesn't fight the widget.
@@ -166,86 +187,79 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
     let abos = app.db.list_abos().unwrap_or_default();
     let editing_id = app.form.editing_id;
 
+    // Cap the scrollable body to the screen so the form never runs off a small
+    // display; the action buttons stay pinned below it.
+    let max_form_height = (ctx.screen_rect().height() - 180.0).clamp(300.0, 760.0);
+    let form_width = LABEL_W + FIELD_W + 56.0;
+
     let mut window_open = true;
     let mut save_clicked = false;
     let mut cancel_clicked = false;
 
     egui::Window::new(title)
         .collapsible(false)
-        .resizable(true)
-        .default_width(540.0)
+        .resizable(false)
+        .default_width(form_width)
         .open(&mut window_open)
         .show(ctx, |ui| {
             let f = &mut app.form;
 
             egui::ScrollArea::vertical()
-                .max_height(560.0)
+                .max_height(max_form_height)
+                .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    egui::Grid::new("contact_form_grid")
-                        .num_columns(2)
-                        .spacing([10.0, 8.0])
-                        .show(ui, |ui| {
-                            ui.label("ชื่อ-นามสกุล *");
-                            ui.text_edit_singleline(&mut f.name);
-                            ui.end_row();
+                    field_row(ui, "ชื่อ-นามสกุล *", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut f.name).desired_width(FIELD_W));
+                    });
+                    field_row(ui, "ชื่อเล่น", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut f.nickname).desired_width(FIELD_W));
+                    });
+                    field_row(ui, "เบอร์โทร", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut f.phone).desired_width(FIELD_W));
+                    });
+                    field_row(ui, "LINE ID", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut f.line_id).desired_width(FIELD_W));
+                    });
+                    field_row(ui, "อายุ", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut f.age).desired_width(FIELD_W));
+                    });
+                    field_row(ui, "เพศ", |ui| {
+                        egui::ComboBox::from_id_source("gender_cb")
+                            .width(FIELD_W)
+                            .selected_text(f.gender.label_th())
+                            .show_ui(ui, |ui| {
+                                for g in Gender::ALL {
+                                    ui.selectable_value(&mut f.gender, g, g.label_th());
+                                }
+                            });
+                    });
+                    field_row(ui, "ที่อยู่", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut f.address).desired_width(FIELD_W));
+                    });
+                    field_row(ui, "กลุ่มเครือข่าย", |ui| {
+                        egui::ComboBox::from_id_source("netcat_cb")
+                            .width(FIELD_W)
+                            .selected_text(f.network_category.label_th())
+                            .show_ui(ui, |ui| {
+                                for n in NetworkCategory::ALL {
+                                    ui.selectable_value(&mut f.network_category, n, n.label_th());
+                                }
+                            });
+                    });
+                    field_row(ui, "ประเภท", |ui| {
+                        egui::ComboBox::from_id_source("ctype_cb")
+                            .width(FIELD_W)
+                            .selected_text(f.contact_type.label_th())
+                            .show_ui(ui, |ui| {
+                                for t in ContactType::ALL {
+                                    ui.selectable_value(&mut f.contact_type, t, t.label_th());
+                                }
+                            });
+                    });
 
-                            ui.label("ชื่อเล่น");
-                            ui.text_edit_singleline(&mut f.nickname);
-                            ui.end_row();
-
-                            ui.label("เบอร์โทร");
-                            ui.text_edit_singleline(&mut f.phone);
-                            ui.end_row();
-
-                            ui.label("LINE ID");
-                            ui.text_edit_singleline(&mut f.line_id);
-                            ui.end_row();
-
-                            ui.label("อายุ");
-                            ui.text_edit_singleline(&mut f.age);
-                            ui.end_row();
-
-                            ui.label("เพศ");
-                            egui::ComboBox::from_id_source("gender_cb")
-                                .selected_text(f.gender.label_th())
-                                .show_ui(ui, |ui| {
-                                    for g in Gender::ALL {
-                                        ui.selectable_value(&mut f.gender, g, g.label_th());
-                                    }
-                                });
-                            ui.end_row();
-
-                            ui.label("ที่อยู่");
-                            ui.text_edit_singleline(&mut f.address);
-                            ui.end_row();
-
-                            ui.label("กลุ่มเครือข่าย");
-                            egui::ComboBox::from_id_source("netcat_cb")
-                                .selected_text(f.network_category.label_th())
-                                .show_ui(ui, |ui| {
-                                    for n in NetworkCategory::ALL {
-                                        ui.selectable_value(
-                                            &mut f.network_category,
-                                            n,
-                                            n.label_th(),
-                                        );
-                                    }
-                                });
-                            ui.end_row();
-
-                            ui.label("ประเภท");
-                            egui::ComboBox::from_id_source("ctype_cb")
-                                .selected_text(f.contact_type.label_th())
-                                .show_ui(ui, |ui| {
-                                    for t in ContactType::ALL {
-                                        ui.selectable_value(&mut f.contact_type, t, t.label_th());
-                                    }
-                                });
-                            ui.end_row();
-                        });
-
-                    ui.add_space(6.0);
+                    ui.add_space(8.0);
                     ui.separator();
+                    ui.add_space(4.0);
 
                     match f.contact_type {
                         ContactType::Prospect => prospect_score_section(ui, f),
@@ -253,10 +267,15 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                         ContactType::Abo => abo_section(ui, f, &abos, editing_id),
                     }
 
-                    ui.add_space(6.0);
+                    ui.add_space(8.0);
                     ui.separator();
+                    ui.add_space(4.0);
                     ui.label("บันทึกเพิ่มเติม / Notes");
-                    ui.text_edit_multiline(&mut f.notes);
+                    ui.add(
+                        egui::TextEdit::multiline(&mut f.notes)
+                            .desired_rows(3)
+                            .desired_width(f32::INFINITY),
+                    );
                 });
 
             ui.add_space(8.0);
@@ -293,26 +312,23 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
 
 fn prospect_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
     ui.label(egui::RichText::new("คะแนนผู้มุ่งหวัง (Sponsor List)").color(ACCENT_STRONG).strong());
-    egui::Grid::new("p_score_grid")
-        .num_columns(2)
-        .spacing([10.0, 6.0])
-        .show(ui, |ui| {
-            ui.label("ความสัมพันธ์ (1-10)");
-            ui.add(egui::DragValue::new(&mut f.p_rel).range(1..=10));
-            ui.end_row();
-            ui.label("ความมั่นคง (1-5)");
-            ui.add(egui::DragValue::new(&mut f.p_fin_stab).range(1..=5));
-            ui.end_row();
-            ui.label("ความเป็นผู้นำ (1-5)");
-            ui.add(egui::DragValue::new(&mut f.p_lead).range(1..=5));
-            ui.end_row();
-            ui.label("สถานะการเงิน (1-5)");
-            ui.add(egui::DragValue::new(&mut f.p_fin_stat).range(1..=5));
-            ui.end_row();
-            ui.label("ติดต่อง่าย (1-5)");
-            ui.add(egui::DragValue::new(&mut f.p_access).range(1..=5));
-            ui.end_row();
-        });
+    ui.add_space(4.0);
+    field_row(ui, "ความสัมพันธ์ (1-10)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.p_rel).range(1..=10));
+    });
+    field_row(ui, "ความมั่นคง (1-5)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.p_fin_stab).range(1..=5));
+    });
+    field_row(ui, "ความเป็นผู้นำ (1-5)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.p_lead).range(1..=5));
+    });
+    field_row(ui, "สถานะการเงิน (1-5)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.p_fin_stat).range(1..=5));
+    });
+    field_row(ui, "ติดต่อง่าย (1-5)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.p_access).range(1..=5));
+    });
+    ui.add_space(4.0);
     let total = scoring::prospect_total(f.p_rel, f.p_fin_stab, f.p_lead, f.p_fin_stat, f.p_access);
     ui.label(
         egui::RichText::new(format!("คะแนนรวม: {total} / 30"))
@@ -323,22 +339,24 @@ fn prospect_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
 
 fn customer_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
     ui.label(egui::RichText::new("คะแนนลูกค้า (Customer List)").color(ACCENT_STRONG).strong());
-    egui::Grid::new("c_score_grid")
-        .num_columns(2)
-        .spacing([10.0, 6.0])
-        .show(ui, |ui| {
-            ui.label("สายสัมพันธ์ (1-10)");
-            ui.add(egui::DragValue::new(&mut f.c_rel).range(1..=10));
-            ui.end_row();
-            ui.label("สถานะการเงิน (1-5)");
-            ui.add(egui::DragValue::new(&mut f.c_fin).range(1..=5));
-            ui.end_row();
-            ui.label("อำนาจการตัดสินใจ (1-5)");
-            ui.add(egui::DragValue::new(&mut f.c_dec).range(1..=5));
-            ui.end_row();
-        });
+    ui.add_space(4.0);
+    field_row(ui, "สายสัมพันธ์ (1-10)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.c_rel).range(1..=10));
+    });
+    field_row(ui, "สถานะการเงิน (1-5)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.c_fin).range(1..=5));
+    });
+    field_row(ui, "อำนาจการตัดสินใจ (1-5)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.c_dec).range(1..=5));
+    });
+    ui.add_space(4.0);
     ui.label("ปัญหา / ความต้องการ");
-    ui.text_edit_multiline(&mut f.c_problems);
+    ui.add(
+        egui::TextEdit::multiline(&mut f.c_problems)
+            .desired_rows(2)
+            .desired_width(f32::INFINITY),
+    );
+    ui.add_space(4.0);
     let total = scoring::customer_total(f.c_rel, f.c_fin, f.c_dec);
     ui.label(
         egui::RichText::new(format!("คะแนนรวม: {total} / 20"))
@@ -349,44 +367,40 @@ fn customer_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
 
 fn abo_section(ui: &mut egui::Ui, f: &mut ContactForm, abos: &[Contact], editing_id: Option<i64>) {
     ui.label(egui::RichText::new("ข้อมูลนักธุรกิจ (ABO)").color(ACCENT_STRONG).strong());
-    egui::Grid::new("abo_grid")
-        .num_columns(2)
-        .spacing([10.0, 6.0])
-        .show(ui, |ui| {
-            ui.label("ระดับ (Rank)");
-            egui::ComboBox::from_id_source("rank_cb")
-                .selected_text(f.rank.as_str())
-                .show_ui(ui, |ui| {
-                    for r in Rank::ALL {
-                        ui.selectable_value(&mut f.rank, r, r.label_th());
+    ui.add_space(4.0);
+    field_row(ui, "ระดับ (Rank)", |ui| {
+        egui::ComboBox::from_id_source("rank_cb")
+            .width(FIELD_W)
+            .selected_text(f.rank.as_str())
+            .show_ui(ui, |ui| {
+                for r in Rank::ALL {
+                    ui.selectable_value(&mut f.rank, r, r.label_th());
+                }
+            });
+    });
+    field_row(ui, "ยอดส่วนตัว (PPV)", |ui| {
+        ui.add(egui::DragValue::new(&mut f.ppv).range(0..=10_000_000).speed(100.0));
+    });
+    field_row(ui, "อัพไลน์ (Sponsor)", |ui| {
+        let current = f
+            .sponsor_id
+            .and_then(|sid| abos.iter().find(|a| a.id == sid))
+            .map(|a| a.display_name())
+            .unwrap_or_else(|| "ฉัน (ME)".to_string());
+        egui::ComboBox::from_id_source("sponsor_cb")
+            .width(FIELD_W)
+            .selected_text(current)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut f.sponsor_id, None, "ฉัน (ME)");
+                for a in abos {
+                    // An ABO cannot sponsor itself.
+                    if Some(a.id) == editing_id {
+                        continue;
                     }
-                });
-            ui.end_row();
-
-            ui.label("ยอดส่วนตัว (PPV)");
-            ui.add(egui::DragValue::new(&mut f.ppv).range(0..=10_000_000).speed(100.0));
-            ui.end_row();
-
-            ui.label("อัพไลน์ (Sponsor)");
-            let current = f
-                .sponsor_id
-                .and_then(|sid| abos.iter().find(|a| a.id == sid))
-                .map(|a| a.display_name())
-                .unwrap_or_else(|| "ฉัน (ME)".to_string());
-            egui::ComboBox::from_id_source("sponsor_cb")
-                .selected_text(current)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut f.sponsor_id, None, "ฉัน (ME)");
-                    for a in abos {
-                        // An ABO cannot sponsor itself.
-                        if Some(a.id) == editing_id {
-                            continue;
-                        }
-                        ui.selectable_value(&mut f.sponsor_id, Some(a.id), a.display_name());
-                    }
-                });
-            ui.end_row();
-        });
+                    ui.selectable_value(&mut f.sponsor_id, Some(a.id), a.display_name());
+                }
+            });
+    });
 }
 
 fn opt(s: &str) -> Option<String> {
