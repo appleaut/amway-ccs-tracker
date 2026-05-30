@@ -275,9 +275,10 @@ impl AppState {
     fn do_seed(&mut self) -> Result<usize> {
         let mut count = 0;
 
-        let abo = |name: &str, rank: Rank, sponsor: Option<i64>| -> Result<i64> {
+        let abo = |name: &str, nick: &str, rank: Rank, sponsor: Option<i64>| -> Result<i64> {
             let mut c = Contact::new_blank();
             c.name = name.to_string();
+            c.nickname = Some(nick.to_string());
             c.contact_type = ContactType::Abo;
             c.rank = Some(rank);
             c.sponsor_id = sponsor;
@@ -285,19 +286,20 @@ impl AppState {
             self.db.insert_contact(&c)
         };
 
-        let a = abo("พิชัย (ทีม A)", Rank::Cl21, None)?;
+        let a = abo("พิชัย", "พี่ชัย", Rank::Cl21, None)?;
         count += 1;
-        let b = abo("สมหญิง", Rank::Cl, Some(a))?;
+        let b = abo("สมหญิง", "หญิง", Rank::Cl, Some(a))?;
         count += 1;
-        let _c = abo("วีระ", Rank::C1, Some(b))?; // 3rd level: A -> สมหญิง -> วีระ
+        let _c = abo("วีระ", "ระ", Rank::C1, Some(b))?; // 3rd level: A -> หญิง -> ระ
         count += 1;
-        let _d = abo("กานดา", Rank::C1, Some(a))?;
+        let _d = abo("กานดา", "ดา", Rank::C1, Some(a))?;
         count += 1;
 
         // Prospects with scores and flow progress.
         let p1 = {
             let mut c = Contact::new_blank();
             c.name = "ธนวัฒน์".to_string();
+            c.nickname = Some("ตั้ม".to_string());
             c.phone = Some("0890001111".to_string());
             c.network_category = NetworkCategory::Coworker;
             self.db.insert_contact(&c)?
@@ -316,6 +318,7 @@ impl AppState {
         let p2 = {
             let mut c = Contact::new_blank();
             c.name = "มาลี".to_string();
+            c.nickname = Some("ลี".to_string());
             c.phone = Some("0890002222".to_string());
             c.network_category = NetworkCategory::Relative;
             self.db.insert_contact(&c)?
@@ -333,6 +336,7 @@ impl AppState {
         let cu1 = {
             let mut c = Contact::new_blank();
             c.name = "อรุณี".to_string();
+            c.nickname = Some("รุณี".to_string());
             c.phone = Some("0890003333".to_string());
             c.contact_type = ContactType::Customer;
             self.db.insert_contact(&c)?

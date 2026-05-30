@@ -282,7 +282,7 @@ fn draw_node(painter: &egui::Painter, node: &Node, abos: &[Contact], r: f32, me_
                 egui::Color32::from_rgb(0xB2, 0xEB, 0xF2),
                 rank,
                 ACCENT_STRONG,
-                c.display_name(),
+                c.short_name(),
             )
         }
     };

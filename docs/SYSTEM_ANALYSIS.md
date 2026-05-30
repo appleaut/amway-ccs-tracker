@@ -43,7 +43,8 @@ A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
 |-------|------|-------|
 | id | INTEGER PK | autoincrement |
 | name | TEXT (required) | full name |
-| nickname / phone / line_id / address | TEXT? | optional |
+| nickname | TEXT? | required via the add/edit form; used as the node label in the network chart (column stays nullable for legacy rows) |
+| phone / line_id / address | TEXT? | optional |
 | age | INTEGER? | 0–255 |
 | gender | TEXT | `Male` / `Female` |
 | network_category | TEXT | Family/Relative/Friend/Coworker/Partner/Acquaintance/Stranger |

@@ -62,6 +62,15 @@ impl Contact {
             _ => self.name.clone(),
         }
     }
+
+    /// Short label for compact UIs (e.g. the network chart): the nickname if
+    /// set, otherwise the full name.
+    pub fn short_name(&self) -> String {
+        match &self.nickname {
+            Some(nick) if !nick.is_empty() => nick.clone(),
+            _ => self.name.clone(),
+        }
+    }
 }
 
 /// Sponsor-List scoring for a prospect. `total` is derived, never trusted from

@@ -211,7 +211,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                     field_row(ui, "ชื่อ-นามสกุล *", |ui| {
                         ui.add(egui::TextEdit::singleline(&mut f.name).desired_width(FIELD_W));
                     });
-                    field_row(ui, "ชื่อเล่น", |ui| {
+                    field_row(ui, "ชื่อเล่น *", |ui| {
                         ui.add(egui::TextEdit::singleline(&mut f.nickname).desired_width(FIELD_W));
                     });
                     field_row(ui, "เบอร์โทร", |ui| {
@@ -418,6 +418,9 @@ fn save_form(app: &mut AppState) -> Result<String> {
     let f = &app.form;
     if f.name.trim().is_empty() {
         return Err(AppError::validation("กรุณากรอกชื่อ (name is required)"));
+    }
+    if f.nickname.trim().is_empty() {
+        return Err(AppError::validation("กรุณากรอกชื่อเล่น (nickname is required)"));
     }
 
     let age = if f.age.trim().is_empty() {
