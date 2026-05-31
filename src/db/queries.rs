@@ -14,9 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use crate::error::{AppError, Result};
 use crate::models::activity::Activity;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::enums::{
-    ActivityKind, ContactType, Gender, NetworkCategory, Rank, SponsorStep,
-};
+use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use crate::utils::scoring;
 
@@ -300,15 +298,10 @@ pub fn set_me_ppv(conn: &Connection, ppv: i64) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Log an interaction with a contact; returns the new activity id.
-pub fn add_activity(
-    conn: &Connection,
-    contact_id: i64,
-    kind: ActivityKind,
-    note: &str,
-) -> Result<i64> {
+pub fn add_activity(conn: &Connection, contact_id: i64, kind: &str, note: &str) -> Result<i64> {
     conn.execute(
         "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
-        params![contact_id, kind.as_str(), note, Local::now().to_rfc3339()],
+        params![contact_id, kind, note, Local::now().to_rfc3339()],
     )?;
     Ok(conn.last_insert_rowid())
 }
@@ -321,11 +314,10 @@ pub fn list_activities(conn: &Connection, contact_id: i64) -> Result<Vec<Activit
          ORDER BY created_at DESC, id DESC",
     )?;
     let rows = stmt.query_map([contact_id], |row| {
-        let kind: String = row.get(1)?;
         let created: String = row.get(3)?;
         Ok(Activity {
             id: row.get(0)?,
-            kind: ActivityKind::from_db(&kind),
+            kind: row.get(1)?,
             note: row.get(2)?,
             created_at: parse_dt(&created),
         })
@@ -336,6 +328,122 @@ pub fn list_activities(conn: &Connection, contact_id: i64) -> Result<Vec<Activit
 pub fn delete_activity(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM activities WHERE id = ?1", [id])?;
     Ok(())
+}
+
+/// One activity joined with its contact, for the aggregate history view.
+pub struct ActivityLogRow {
+    pub activity: Activity,
+    pub contact_id: i64,
+    pub contact_name: String,
+    pub contact_type: ContactType,
+}
+
+/// Every logged activity across all contacts, newest first, filtered by a
+/// substring of the contact name/nickname or the note text.
+pub fn list_all_activities(conn: &Connection, query: &str) -> Result<Vec<ActivityLogRow>> {
+    let like = format!("%{query}%");
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.kind, a.note, a.created_at, c.id, c.name, c.nickname, c.contact_type
+         FROM activities a
+         JOIN contacts c ON c.id = a.contact_id
+         WHERE c.name LIKE ?1 OR IFNULL(c.nickname, '') LIKE ?1 OR a.note LIKE ?1
+         ORDER BY a.created_at DESC, a.id DESC",
+    )?;
+    let rows = stmt.query_map([like], |row| {
+        let created: String = row.get(3)?;
+        let name: String = row.get(5)?;
+        let nickname: Option<String> = row.get(6)?;
+        let ctype: String = row.get(7)?;
+        let contact_name = match nickname {
+            Some(n) if !n.is_empty() => format!("{name} ({n})"),
+            _ => name,
+        };
+        Ok(ActivityLogRow {
+            activity: Activity {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                note: row.get(2)?,
+                created_at: parse_dt(&created),
+            },
+            contact_id: row.get(4)?,
+            contact_name,
+            contact_type: ContactType::from_db(&ctype),
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+// ---------------------------------------------------------------------------
+// Activity kinds (user-managed types)
+// ---------------------------------------------------------------------------
+
+/// A user-managed activity type.
+pub struct ActivityKindRow {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Map a UNIQUE-constraint failure to a friendly message; pass other errors on.
+fn dup_or(e: rusqlite::Error, msg: &str) -> AppError {
+    if let rusqlite::Error::SqliteFailure(f, _) = &e {
+        if f.code == rusqlite::ErrorCode::ConstraintViolation {
+            return AppError::validation(msg);
+        }
+    }
+    AppError::from(e)
+}
+
+/// All activity types, ordered by name.
+pub fn list_activity_kinds(conn: &Connection) -> Result<Vec<ActivityKindRow>> {
+    let mut stmt =
+        conn.prepare("SELECT id, name FROM activity_kinds ORDER BY name COLLATE NOCASE")?;
+    let rows = stmt.query_map([], |row| {
+        Ok(ActivityKindRow {
+            id: row.get(0)?,
+            name: row.get(1)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Add a new activity type (names are unique and non-empty).
+pub fn add_activity_kind(conn: &Connection, name: &str) -> Result<i64> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(AppError::validation("กรุณากรอกชื่อประเภทกิจกรรม"));
+    }
+    conn.execute("INSERT INTO activity_kinds (name) VALUES (?1)", params![name])
+        .map_err(|e| dup_or(e, "มีประเภทกิจกรรมนี้อยู่แล้ว"))?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Rename an activity type; existing activity rows using the old name are
+/// relabelled too, so history stays consistent with the dropdown.
+pub fn rename_activity_kind(conn: &Connection, id: i64, name: &str) -> Result<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(AppError::validation("กรุณากรอกชื่อประเภทกิจกรรม"));
+    }
+    let old: String =
+        conn.query_row("SELECT name FROM activity_kinds WHERE id = ?1", [id], |r| r.get(0))?;
+    if old == name {
+        return Ok(());
+    }
+    conn.execute("UPDATE activity_kinds SET name = ?1 WHERE id = ?2", params![name, id])
+        .map_err(|e| dup_or(e, "มีประเภทกิจกรรมนี้อยู่แล้ว"))?;
+    conn.execute("UPDATE activities SET kind = ?1 WHERE kind = ?2", params![name, old])?;
+    Ok(())
+}
+
+/// Delete an activity type. Past activities keep their stored text.
+pub fn delete_activity_kind(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM activity_kinds WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// How many logged activities currently use a kind name (for delete warnings).
+pub fn activity_kind_usage(conn: &Connection, name: &str) -> Result<i64> {
+    Ok(conn.query_row("SELECT COUNT(*) FROM activities WHERE kind = ?1", [name], |r| r.get(0))?)
 }
 
 // ---------------------------------------------------------------------------
@@ -941,14 +1049,14 @@ mod tests {
     fn activities_add_list_delete_and_cascade() {
         let conn = mem();
         let id = insert_contact(&conn, &sample_prospect("Act")).unwrap();
-        let a1 = add_activity(&conn, id, ActivityKind::Demo, "สาธิต Nutrilite").unwrap();
-        add_activity(&conn, id, ActivityKind::Promotion, "").unwrap();
+        let a1 = add_activity(&conn, id, "สาธิตสินค้า", "สาธิต Nutrilite").unwrap();
+        add_activity(&conn, id, "บอกโปรโมชั่น", "").unwrap();
 
         let list = list_activities(&conn, id).unwrap();
         assert_eq!(list.len(), 2);
         // Newest first; the id DESC tiebreaker keeps the later insert on top.
-        assert_eq!(list[0].kind, ActivityKind::Promotion);
-        assert_eq!(list[1].kind, ActivityKind::Demo);
+        assert_eq!(list[0].kind, "บอกโปรโมชั่น");
+        assert_eq!(list[1].kind, "สาธิตสินค้า");
         assert_eq!(list[1].note, "สาธิต Nutrilite");
 
         delete_activity(&conn, a1).unwrap();
@@ -957,6 +1065,57 @@ mod tests {
         // Deleting the contact cascades its activities.
         delete_contact(&conn, id).unwrap();
         assert_eq!(list_activities(&conn, id).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn list_all_activities_joins_contacts_and_filters() {
+        let conn = mem();
+        let p = insert_contact(&conn, &sample_prospect("ธนา")).unwrap();
+        let mut cust = sample_prospect("มานี");
+        cust.contact_type = ContactType::Customer;
+        let c = insert_contact(&conn, &cust).unwrap();
+        add_activity(&conn, p, "สาธิตสินค้า", "สาธิตสินค้า").unwrap();
+        add_activity(&conn, c, "บอกโปรโมชั่น", "โปร 11.11").unwrap();
+
+        // All rows, newest first (id DESC tiebreaker → the promotion on top).
+        let all = list_all_activities(&conn, "").unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].activity.kind, "บอกโปรโมชั่น");
+        assert_eq!(all[0].contact_type, ContactType::Customer);
+        assert_eq!(all[0].contact_name, "มานี");
+
+        // Filter by contact name.
+        let by_name = list_all_activities(&conn, "ธนา").unwrap();
+        assert_eq!(by_name.len(), 1);
+        assert_eq!(by_name[0].contact_id, p);
+
+        // Filter by note text.
+        assert_eq!(list_all_activities(&conn, "11.11").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn activity_kinds_crud_and_rename_relabels_activities() {
+        let conn = mem();
+        // Defaults are seeded by the v5 migration.
+        let initial = list_activity_kinds(&conn).unwrap();
+        assert!(initial.iter().any(|k| k.name == "สาธิตสินค้า"));
+
+        // Add a kind; blanks and duplicates are rejected.
+        let id = add_activity_kind(&conn, "ส่งของ").unwrap();
+        assert!(add_activity_kind(&conn, "ส่งของ").is_err());
+        assert!(add_activity_kind(&conn, "   ").is_err());
+
+        // Log an activity with that kind, then rename → the activity follows.
+        let cid = insert_contact(&conn, &sample_prospect("ก")).unwrap();
+        add_activity(&conn, cid, "ส่งของ", "").unwrap();
+        rename_activity_kind(&conn, id, "จัดส่ง").unwrap();
+        assert_eq!(activity_kind_usage(&conn, "ส่งของ").unwrap(), 0);
+        assert_eq!(activity_kind_usage(&conn, "จัดส่ง").unwrap(), 1);
+
+        // Delete the kind; the past activity keeps its (renamed) text.
+        delete_activity_kind(&conn, id).unwrap();
+        assert!(!list_activity_kinds(&conn).unwrap().iter().any(|k| k.id == id));
+        assert_eq!(list_activities(&conn, cid).unwrap()[0].kind, "จัดส่ง");
     }
 
     #[test]

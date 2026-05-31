@@ -135,7 +135,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     if let Some(id) = edit_id {
         forms::open_edit(app, id);
     }
-    if let Some(req) = delete_req {
-        app.pending_delete = Some(req);
+    if let Some((id, name)) = delete_req {
+        app.pending_delete = Some(crate::ui::confirm::PendingDelete::Contact { id, name });
     }
 }

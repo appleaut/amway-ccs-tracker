@@ -2,7 +2,6 @@
 //! (สาธิตสินค้า / บอกโปรโมชั่น / พูดแผน / …) for any contact.
 
 use crate::app::AppState;
-use crate::models::enums::ActivityKind;
 use crate::ui::{ACCENT, ACCENT_STRONG};
 
 pub fn render(app: &mut AppState, ctx: &egui::Context) {
@@ -19,6 +18,11 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         }
     };
     let activities = app.db.list_activities(id).unwrap_or_default();
+    let kinds = app.db.list_activity_kinds().unwrap_or_default();
+    // Keep the selected kind valid: default to the first available type.
+    if app.activity_kind.is_empty() || !kinds.iter().any(|k| k.name == app.activity_kind) {
+        app.activity_kind = kinds.first().map(|k| k.name.clone()).unwrap_or_default();
+    }
 
     let mut open = true;
     let mut add = false;
@@ -39,12 +43,19 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
             ui.horizontal(|ui| {
                 ui.label("ประเภท:");
                 egui::ComboBox::from_id_source("activity_kind")
-                    .selected_text(app.activity_kind.label_th())
+                    .selected_text(app.activity_kind.as_str())
                     .show_ui(ui, |ui| {
-                        for k in ActivityKind::ALL {
-                            ui.selectable_value(&mut app.activity_kind, k, k.label_th());
+                        for k in &kinds {
+                            ui.selectable_value(
+                                &mut app.activity_kind,
+                                k.name.clone(),
+                                k.name.as_str(),
+                            );
                         }
                     });
+                if kinds.is_empty() {
+                    ui.weak("— ยังไม่มีประเภท (เพิ่มที่เมนู ประเภทกิจกรรม) —");
+                }
             });
             ui.horizontal(|ui| {
                 ui.add(
@@ -52,7 +63,11 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                         .hint_text("รายละเอียด (ไม่บังคับ)")
                         .desired_width(300.0),
                 );
-                if ui.add(egui::Button::new("➕ เพิ่ม").fill(ACCENT)).clicked() {
+                let can_add = !app.activity_kind.is_empty();
+                if ui
+                    .add_enabled(can_add, egui::Button::new("➕ เพิ่ม").fill(ACCENT))
+                    .clicked()
+                {
                     add = true;
                 }
             });
@@ -75,7 +90,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                                 .weak(),
                             );
                             ui.label(
-                                egui::RichText::new(a.kind.label_th())
+                                egui::RichText::new(a.kind.as_str())
                                     .color(ACCENT_STRONG)
                                     .strong(),
                             );
@@ -99,8 +114,8 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
 
     if add {
         let note = app.activity_note.trim().to_string();
-        let kind = app.activity_kind;
-        match app.db.add_activity(id, kind, &note) {
+        let kind = app.activity_kind.clone();
+        match app.db.add_activity(id, &kind, &note) {
             Ok(_) => {
                 app.activity_note.clear();
                 app.set_status("บันทึกประวัติแล้ว");

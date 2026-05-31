@@ -82,10 +82,17 @@ A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
 CCS Conference (3).
 
 ### activities — interaction history (many per contact, schema v3)
-`id`, `contact_id` (FK→contacts, ON DELETE CASCADE), `kind` (ActivityKind:
-Demo / Promotion / Plan / FollowUp / Meeting / Other), `note` (free text),
-`created_at`. Logs what was done with a prospect/customer/ABO (สาธิตสินค้า,
-บอกโปรโมชั่น, พูดแผน, …).
+`id`, `contact_id` (FK→contacts, ON DELETE CASCADE), `kind` (the activity-type
+*name*, stored as text — see `activity_kinds`), `note` (free text), `created_at`.
+Logs what was done with a prospect/customer/ABO (สาธิตสินค้า, บอกโปรโมชั่น, พูดแผน, …).
+
+### activity_kinds — user-managed activity types (schema v5)
+`id`, `name` (UNIQUE). The list of types shown in the activity-log dropdown and
+the history filter, editable via the Activity Types screen. Renaming a type also
+relabels matching `activities.kind`; deleting one leaves past activities' text
+intact (it just disappears from the dropdown). Seeded with the former built-in
+kinds on migration. Activities store the name (not an FK id) so history is
+self-contained.
 
 ### meta — app-level key/value store (schema v4)
 `key` (PK), `value`. Holds settings that have no contact row — notably
@@ -129,6 +136,8 @@ NULL, and my rank is derived the same way an ABO's is.
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
 | Network | Radial node chart — "me" at the centre (showing my own qualified rank), downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout, and a 📊 button that opens my self Rank Advisor (my direct legs + my PPV → my qualified rank) |
 | Activity Log | Per-contact interaction-history modal (📝 from any list): add/view/delete entries by kind + free note |
+| Activity History | Aggregate timeline of every logged interaction across all contacts, newest first; text search (name/note) + kind filter; jump to a contact's log (📝) or delete an entry (🗑) |
+| Activity Types | Manage the activity-type list (CRUD): add, rename (relabels existing activities), delete (past activities keep their text). Feeds the activity-log dropdown and the history filter |
 | Settings | DB location, font, total contacts, sample-data seeder, rank/bonus calculator (PV + downline-leg counts → qualified rank, matching the full conditions) |
 
 ## E. Data flow — how a person moves through the pipeline

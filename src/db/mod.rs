@@ -14,9 +14,9 @@ use rusqlite::Connection;
 use crate::error::Result;
 use crate::models::activity::Activity;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::enums::{ActivityKind, ContactType, SponsorStep};
+use crate::models::enums::{ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
-use queries::{AboRow, CustomerRow, ProspectRow};
+use queries::{AboRow, ActivityKindRow, ActivityLogRow, CustomerRow, ProspectRow};
 
 /// Owns the SQLite connection and exposes typed, validated operations.
 pub struct DbConnection {
@@ -73,7 +73,7 @@ impl DbConnection {
     pub fn set_me_ppv(&self, ppv: i64) -> Result<()> {
         queries::set_me_ppv(&self.conn, ppv)
     }
-    pub fn add_activity(&self, contact_id: i64, kind: ActivityKind, note: &str) -> Result<i64> {
+    pub fn add_activity(&self, contact_id: i64, kind: &str, note: &str) -> Result<i64> {
         queries::add_activity(&self.conn, contact_id, kind, note)
     }
     pub fn list_activities(&self, contact_id: i64) -> Result<Vec<Activity>> {
@@ -81,6 +81,27 @@ impl DbConnection {
     }
     pub fn delete_activity(&self, id: i64) -> Result<()> {
         queries::delete_activity(&self.conn, id)
+    }
+    pub fn list_all_activities(&self, q: &str) -> Result<Vec<ActivityLogRow>> {
+        queries::list_all_activities(&self.conn, q)
+    }
+
+    // --- activity kinds (user-managed types) ------------------------------
+
+    pub fn list_activity_kinds(&self) -> Result<Vec<ActivityKindRow>> {
+        queries::list_activity_kinds(&self.conn)
+    }
+    pub fn add_activity_kind(&self, name: &str) -> Result<i64> {
+        queries::add_activity_kind(&self.conn, name)
+    }
+    pub fn rename_activity_kind(&self, id: i64, name: &str) -> Result<()> {
+        queries::rename_activity_kind(&self.conn, id, name)
+    }
+    pub fn delete_activity_kind(&self, id: i64) -> Result<()> {
+        queries::delete_activity_kind(&self.conn, id)
+    }
+    pub fn activity_kind_usage(&self, name: &str) -> Result<i64> {
+        queries::activity_kind_usage(&self.conn, name)
     }
 
     // --- scores -----------------------------------------------------------

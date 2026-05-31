@@ -1,14 +1,42 @@
 //! Shared "confirm delete" modal.
 //!
-//! List views don't delete immediately: clicking 🗑 stores the target in
+//! Views don't delete immediately: clicking 🗑 stores the target in
 //! `AppState.pending_delete`. This modal then asks for confirmation and performs
 //! the delete (or cancels). One implementation serves every table.
 
 use crate::app::AppState;
 
+/// What a pending delete targets — set by clicking 🗑 in a table.
+#[derive(Clone)]
+pub enum PendingDelete {
+    Contact { id: i64, name: String },
+    ActivityKind { id: i64, name: String },
+}
+
 pub fn render(app: &mut AppState, ctx: &egui::Context) {
-    let Some((id, name)) = app.pending_delete.clone() else {
+    let Some(pending) = app.pending_delete.clone() else {
         return;
+    };
+
+    // Per-target name + warning detail.
+    let (name, detail) = match &pending {
+        PendingDelete::Contact { name, .. } => (
+            name.clone(),
+            "ข้อมูลคะแนน / ติดตามผล / ประวัติการติดต่อที่เกี่ยวข้องจะถูกลบด้วย และกู้คืนไม่ได้"
+                .to_string(),
+        ),
+        PendingDelete::ActivityKind { name, .. } => {
+            let used = app.db.activity_kind_usage(name).unwrap_or(0);
+            let detail = if used > 0 {
+                format!(
+                    "มีประวัติ {used} รายการที่ใช้ประเภทนี้ — รายการเดิมจะยังคงข้อความไว้ \
+                     แต่ประเภทนี้จะหายจากตัวเลือก"
+                )
+            } else {
+                "ประเภทนี้จะถูกลบออกจากตัวเลือก".to_string()
+            };
+            (name.clone(), detail)
+        }
     };
 
     let mut confirm = false;
@@ -23,13 +51,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.add_space(4.0);
             ui.label(format!("ต้องการลบ \"{name}\" ใช่หรือไม่?"));
-            ui.label(
-                egui::RichText::new(
-                    "ข้อมูลคะแนน / ติดตามผล / สถานะที่เกี่ยวข้องจะถูกลบด้วย และกู้คืนไม่ได้",
-                )
-                .small()
-                .weak(),
-            );
+            ui.label(egui::RichText::new(detail).small().weak());
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 if ui
@@ -50,7 +72,11 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         });
 
     if confirm {
-        match app.db.delete_contact(id) {
+        let result = match &pending {
+            PendingDelete::Contact { id, .. } => app.db.delete_contact(*id),
+            PendingDelete::ActivityKind { id, .. } => app.db.delete_activity_kind(*id),
+        };
+        match result {
             Ok(()) => app.set_status(format!("ลบ \"{name}\" เรียบร้อย")),
             Err(e) => app.set_error(e),
         }

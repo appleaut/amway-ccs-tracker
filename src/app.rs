@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::db::DbConnection;
 use crate::error::{AppError, Result};
 use crate::models::contact::{Contact, CustomerScore, ProspectScore};
-use crate::models::enums::{ActivityKind, ContactType, NetworkCategory, Rank, SponsorStep};
+use crate::models::enums::{ContactType, NetworkCategory, Rank, SponsorStep};
 use crate::ui::forms::ContactForm;
 use crate::ui::{self, View, ACCENT, ACCENT_STRONG};
 
@@ -41,16 +41,23 @@ pub struct AppState {
     /// User-dragged position offsets for downline-chart nodes, keyed by contact
     /// id (the central "me" node uses `i64::MIN`). Empty = pure auto-layout.
     pub node_offsets: HashMap<i64, egui::Vec2>,
-    /// Contact awaiting delete confirmation: `(id, display name)`.
-    pub pending_delete: Option<(i64, String)>,
+    /// Row awaiting delete confirmation (a contact or an activity type).
+    pub pending_delete: Option<ui::confirm::PendingDelete>,
     /// ABO id currently open in the Rank Advisor modal.
     pub rank_advisor: Option<i64>,
     /// Whether the self ("ฉัน / ME") Rank Advisor modal is open.
     pub me_advisor: bool,
     /// Contact whose activity log is open, plus the new-entry draft.
     pub activity_contact: Option<i64>,
-    pub activity_kind: ActivityKind,
+    /// Selected activity-type name in the activity-log "add" form.
+    pub activity_kind: String,
     pub activity_note: String,
+    /// Kind filter on the aggregate Activity History page (`None` = all kinds).
+    pub history_kind: Option<String>,
+    /// Draft text for the Activity Types page (add / rename buffer).
+    pub kind_draft: String,
+    /// Activity-type id being renamed on the Activity Types page (`None` = add).
+    pub kind_edit: Option<i64>,
 }
 
 impl AppState {
@@ -83,8 +90,11 @@ impl AppState {
             rank_advisor: None,
             me_advisor: false,
             activity_contact: None,
-            activity_kind: ActivityKind::Demo,
+            activity_kind: String::new(),
             activity_note: String::new(),
+            history_kind: None,
+            kind_draft: String::new(),
+            kind_edit: None,
         })
     }
 
@@ -126,6 +136,8 @@ impl AppState {
             (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
             (View::Network, "🌳  เครือข่าย"),
+            (View::Activities, "📝  ประวัติติดต่อ"),
+            (View::ActivityKinds, "📋  ประเภทกิจกรรม"),
             (View::Settings, "⚙  ตั้งค่า"),
         ];
         for (view, label) in items {
@@ -369,6 +381,8 @@ impl eframe::App for AppState {
             View::Abos => ui::abo_list::render(self, ui),
             View::FollowUp => ui::followup::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
+            View::Activities => ui::activities::render(self, ui),
+            View::ActivityKinds => ui::activity_kinds::render(self, ui),
             View::Settings => self.settings(ui),
         });
 

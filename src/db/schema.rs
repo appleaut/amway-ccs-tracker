@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 4;
+const CURRENT_VERSION: i64 = 5;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -128,6 +128,27 @@ pub fn migrate(conn: &Connection) -> Result<()> {
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );",
+        )?;
+    }
+
+    if version < 5 {
+        // Activity types become user-manageable data instead of a fixed enum.
+        // Seed the former built-in kinds (as their Thai labels) and migrate
+        // existing activity rows from the old enum keys to those labels.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS activity_kinds (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT    NOT NULL UNIQUE
+            );
+            INSERT OR IGNORE INTO activity_kinds (name) VALUES
+                ('สาธิตสินค้า'), ('บอกโปรโมชั่น'), ('พูดแผนธุรกิจ'),
+                ('ติดตามผล'), ('นัดพบ / พูดคุย'), ('อื่นๆ');
+            UPDATE activities SET kind = 'สาธิตสินค้า'    WHERE kind = 'Demo';
+            UPDATE activities SET kind = 'บอกโปรโมชั่น'   WHERE kind = 'Promotion';
+            UPDATE activities SET kind = 'พูดแผนธุรกิจ'   WHERE kind = 'Plan';
+            UPDATE activities SET kind = 'ติดตามผล'       WHERE kind = 'FollowUp';
+            UPDATE activities SET kind = 'นัดพบ / พูดคุย'  WHERE kind = 'Meeting';
+            UPDATE activities SET kind = 'อื่นๆ'           WHERE kind = 'Other';",
         )?;
     }
 

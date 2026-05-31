@@ -70,7 +70,7 @@ src/
 │   ├── contact.rs      Contact, ProspectScore, CustomerScore, SponsorFlowStatus
 │   ├── followup.rs     FollowUpSheet (26-item BK1/BK2/C1/Conference checklist)
 │   ├── activity.rs     Activity (per-contact interaction history)
-│   └── enums.rs        Gender, NetworkCategory, ContactType, Rank, SponsorStep, ActivityKind
+│   └── enums.rs        Gender, NetworkCategory, ContactType, Rank, SponsorStep
 ├── ui/
 │   ├── dashboard.rs    summary cards + customer target + flow overview
 │   ├── prospect_list.rs   Sponsor List table (sortable, editable step, advance)
@@ -81,7 +81,9 @@ src/
 │   ├── forms.rs           add/edit modal with scoring inputs
 │   ├── confirm.rs         shared delete-confirmation modal
 │   ├── rank_advisor.rs    rank assessment for an ABO and for "me" (PPV + downline legs → qualified rank)
-│   └── activity_log.rs    per-contact interaction history (📝, all tables)
+│   ├── activity_log.rs    per-contact interaction history modal (📝, all tables)
+│   ├── activities.rs      aggregate Activity History page (all contacts, search + kind filter)
+│   └── activity_kinds.rs  manage activity types (CRUD) used by the log + history
 └── utils/
     └── scoring.rs      score totals, rank/bonus tiers, transition validation + unit tests
 ```
