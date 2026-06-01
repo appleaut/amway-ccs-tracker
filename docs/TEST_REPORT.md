@@ -9,11 +9,12 @@ enforced in code (not just the UI), and the automated suite passes.
 |---------|--------|
 | `cargo build` (debug) | ✅ Finished, **0 warnings, 0 errors** |
 | `cargo build --release --target x86_64-pc-windows-msvc` | ✅ Finished — `target\x86_64-pc-windows-msvc\release\amway_ccs_tracker.exe` (≈6.1 MB) |
-| `cargo test` | ✅ **27 passed; 0 failed** |
+| `cargo test` | ✅ **33 passed; 0 failed** |
 
 Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 (bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1; plus
-`egui_extras` 0.28 (`TableBuilder` for full-width tables) and `png` 0.17
+`egui_extras` 0.28 (`TableBuilder` for full-width tables, `datepicker` for the
+to-do due date) and `png` 0.17
 (network-chart PNG export).
 
 ## 2. Automated tests written
@@ -30,6 +31,11 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `rank_cannot_regress` | CL→C1 `Err`; KOC→C1, hold, advance `Ok` |
 | `qualified_rank_needs_both_ppv_and_legs` | rank advisor: PPV + 3-leg conditions per "5 Steps to 21%" |
 | `sponsor_step_must_advance_sequentially` | Step1→Step5 `Err`; +1 / back / hold `Ok` |
+
+### Unit tests — `src/models/todo.rs`
+| Test | Asserts |
+|------|---------|
+| `overdue_only_when_unfinished_and_past_due` | overdue = unfinished AND due date strictly before today; done / due-today / future / no-due-date → not overdue |
 
 ### DB integration tests — `src/db/queries.rs` (in-memory SQLite)
 | Test | Asserts |
@@ -52,6 +58,11 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `customer_rows_resolve_upline_name` | customer list resolves the managing-upline ABO name; `None` (mine) when no sponsor is set |
 | `member_abo_numbers_round_trip` | optional member_no / abo_no persist through insert and update (set, clear, change) |
 | `activities_add_list_delete_and_cascade` | activity log: add/list (newest first)/delete; cascades on contact delete |
+| `todo_add_list_update_delete` | to-do CRUD: add (trims, rejects blank) → list → update (clear due date / unassign contact) → delete |
+| `todo_list_orders_pending_then_due_date` | ordering: pending before done, soonest due first, no-due-date last |
+| `todo_done_toggle_persists` | toggling the done flag persists both directions |
+| `todo_contact_set_null_on_delete` | deleting a linked contact preserves the to-do with `contact_id` NULL |
+| `overdue_and_due_soon_counts` | overdue = unfinished past-due; due-soon = within N days, inclusive both ends |
 
 ## 3. Business-rule enforcement (verified in code, not just UI)
 
@@ -64,6 +75,7 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | Sponsor step advances sequentially | `validate_step_transition` ([scoring.rs:121](../src/utils/scoring.rs)) in `set_sponsor_step` ([queries.rs:399](../src/db/queries.rs)) |
 | Rank can only advance, not regress | `validate_rank_transition` ([scoring.rs:106](../src/utils/scoring.rs)) in `update_contact` |
 | Delete cascades to scores/follow-up | FK `ON DELETE CASCADE` + `PRAGMA foreign_keys=ON` ([schema.rs](../src/db/schema.rs), [db/mod.rs](../src/db/mod.rs)) |
+| Deleting a contact preserves its to-dos (link nulled) | FK `ON DELETE SET NULL` on `todos.contact_id` ([schema.rs](../src/db/schema.rs)) |
 
 ## 4. Error handling review
 
@@ -80,7 +92,7 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 *Load sample data* to populate the views.
 
-- [ ] App launches without crash; Thai text renders (not boxes)
+- [ ] App launches without crash; Thai text renders (not boxes); all sidebar menu icons render (no tofu squares)
 - [ ] Add new prospect → appears in Prospects list
 - [ ] Score total updates live as score fields change in the form
 - [ ] Sponsor step dropdown sets any step (jump/back) for editing; ▶ still advances one step at a time
@@ -94,6 +106,11 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] 📝 Activity Log (any table): add an entry (kind + note), it appears newest-first; delete works; entries survive app restart
 - [ ] ประวัติติดต่อ (Activity History) menu: lists every entry across all contacts newest-first; search by name/note and the kind filter narrow the list; 📝 opens that contact's log; 🗑 removes an entry
 - [ ] ประเภทกิจกรรม (Activity Types) menu: add a type; rename it (existing history relabels); delete it (🗑 confirms; history keeps its text); blank/duplicate names are rejected; the new type appears in the activity-log dropdown
+- [ ] สิ่งที่ต้องทำ (Todo) menu: add a task with/without a contact and with/without a due date (date picker); it appears under the default "ยังไม่เสร็จ" filter ordered by due date
+- [ ] A past-due unfinished task shows its due date in red; the Dashboard "งานเลยกำหนด" card counts it and clicking the card opens the Todo page filtered to "เลยกำหนด"
+- [ ] Tick a task done → it strikes through and leaves the pending filter (visible under "เสร็จแล้ว"); ✏ loads it into the inline form; 🗑 confirms then deletes
+- [ ] Todo filters narrow correctly (status + ของ: ผู้มุ่งหวัง / ลูกค้า VIP / นักธุรกิจ / ไม่ระบุ) and text search matches task or contact name
+- [ ] Delete a contact that has a task → the task survives on the Todo page as "—" (unassigned)
 - [ ] Follow-Up ABO picker & ABO form's upline selector: typing in the combo filters the list; selecting still works; "ฉัน (ME)" stays available for the sponsor
 - [ ] Follow-up checkboxes persist after closing & reopening the app
 - [ ] Follow-up progress bar updates as items are checked
@@ -126,3 +143,7 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
   calculator. So PV alone reaches at most C1 — e.g. 15,000 PV with no qualifying
   legs is C1 (bonus 9%); CL needs 15,000≥10,000 PV **plus** 3 C1+ legs. No 3%
   entry-tier is defined in the spec (real Amway has one below 5,000 PV).
+* **Sidebar emoji must exist in egui's bundled font subset.** The Todo menu icon
+  `🗒️` (U+1F5D2) rendered as a tofu square (absent from the bundled NotoEmoji /
+  icon fonts) and was changed to `📅` (U+1F4C5), present in both. Verify new UI
+  emoji against the bundled fonts' cmaps before using them.

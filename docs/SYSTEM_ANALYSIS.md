@@ -34,6 +34,7 @@ tracker. This is the specification the implementation follows.
 
 Delete semantics: deleting a contact CASCADEs its score/flow/follow-up rows.
 A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
+A deleted contact's todos are kept too (their contact_id is set NULL).
 ```
 
 ## B. Entities & fields
@@ -95,6 +96,15 @@ intact (it just disappears from the dropdown). Seeded with the former built-in
 kinds on migration. Activities store the name (not an FK id) so history is
 self-contained.
 
+### todos — to-do tasks (schema v7)
+`id`, `contact_id` (FK→contacts, **ON DELETE SET NULL** — optional: a task may
+target no one, and survives its contact's deletion as "unassigned"), `task`
+(free text, required), `due_date` (`YYYY-MM-DD`, nullable = "no due date"),
+`done` (INTEGER bool), `created_at`. A task may be tied to any contact type
+(Prospect / Customer / ABO) or none. "Overdue" is **derived**, not stored:
+`!done && due_date < today`. The list orders pending-before-done, then by
+soonest due date (no-due-date last).
+
 ### meta — app-level key/value store (schema v4)
 `key` (PK), `value`. Holds settings that have no contact row — notably
 `me_ppv`, my own Personal PV, used to assess *my* ("ฉัน / ME") rank. "Me" is the
@@ -122,19 +132,22 @@ NULL, and my rank is derived the same way an ABO's is.
    ahead (e.g. Step 1 → Step 5) is rejected. Moving back to correct a mistake is
    allowed. Reaching a step records its date.
 5. **Monotonic rank** — rank may advance or hold, never regress.
-6. **Cascade vs. preserve** — deleting a contact cascades its dependent rows;
-   deleting a sponsor preserves the downline (their `sponsor_id` becomes NULL).
+6. **Cascade vs. preserve** — deleting a contact cascades its dependent
+   score/flow/follow-up rows, but preserves its to-dos (their `contact_id`
+   becomes NULL); likewise deleting a sponsor preserves the downline (their
+   `sponsor_id` becomes NULL).
 7. **Local only** — all data in a local SQLite file; no network calls.
 
 ## D. Screens
 
 | Screen | Purpose |
 |--------|---------|
-| Dashboard | Cards: prospects, customers, ABOs, this-month conversions; customer 20-target bar; sponsor-flow overview |
+| Dashboard | Cards: prospects, customers, ABOs, this-month conversions, and a clickable **งานเลยกำหนด (overdue to-dos)** card that jumps to the Todo page; customer 20-target bar; sponsor-flow overview |
 | Prospects | Sponsor List table, sortable columns, inline editable step (dropdown sets any step) + ▶ advance, search, add/edit/delete |
 | Customers | Customer Name List table, sortable columns (incl. upline), search, add/edit/delete; the form has a searchable upline (Sponsor) selector so a VIP customer can be assigned to a downline ABO we manage (or "ฉัน (ME)" = ours directly) |
 | ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs. The add/edit form's upline (sponsor) selector is a searchable combo |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar; the ABO picker is a searchable combo |
+| Todo | "สิ่งที่ต้องทำ" — to-do tasks with an optional due date (date picker), each optionally tied to a Prospect/Customer/ABO (or none); inline add/edit, tick-to-complete, overdue shown red; filter by status (default ยังไม่เสร็จ) + contact type + text search |
 | Network | Radial node chart — "me" at the centre (showing my own qualified rank), downline radiating out, straight-line links; nodes are draggable, with zoom in/out controls and an Auto-arrange button that resets the layout, drag offsets, and zoom (back to 100%); a 📊 button opens my self Rank Advisor (my direct legs + my PPV → my qualified rank); 💾 บันทึกรูป exports the visible chart as a PNG |
 | Activity Log | Per-contact interaction-history modal (📝 from any list): add/view/delete entries by kind + free note |
 | Activity History | Aggregate timeline of every logged interaction across all contacts, newest first; text search (name/note) + kind filter; jump to a contact's log (📝) or delete an entry (🗑) |
