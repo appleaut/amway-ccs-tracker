@@ -18,7 +18,10 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let abos = app.handle(r, 0);
     let r = app.db.count_conversions_this_month();
     let conversions = app.handle(r, 0);
+    let r = app.db.count_overdue_todos();
+    let overdue = app.handle(r, 0);
 
+    let mut go_overdue = false;
     ui.horizontal_wrapped(|ui| {
         ui::metric_card(ui, "ผู้มุ่งหวัง (Prospects)", &prospects.to_string(), ACCENT_STRONG);
         ui::metric_card(
@@ -39,7 +42,21 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             &conversions.to_string(),
             egui::Color32::from_rgb(0xAD, 0x14, 0x57), // pink 800
         );
+        if ui::metric_card_clickable(
+            ui,
+            "งานเลยกำหนด (Overdue)",
+            &overdue.to_string(),
+            egui::Color32::from_rgb(0xD3, 0x2F, 0x2F), // red
+        )
+        .clicked()
+        {
+            go_overdue = true;
+        }
     });
+    if go_overdue {
+        app.view = ui::View::Todos;
+        app.todo_status_filter = ui::todo::TodoStatusFilter::Overdue;
+    }
 
     ui.add_space(18.0);
     ui.separator();
