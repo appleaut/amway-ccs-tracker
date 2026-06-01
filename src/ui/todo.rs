@@ -15,8 +15,9 @@ use crate::ui::{filter_combo, ACCENT, ACCENT_STRONG};
 /// Form-row label column width (px) and the field width that follows it.
 const LABEL_W: f32 = 110.0;
 const FIELD_W: f32 = 300.0;
-/// Max width of the add/edit form group, so fields don't stretch the window.
-const FORM_W: f32 = 460.0;
+/// Max width of a content block — the add/edit form group and the search/filter
+/// group share it so the two panels line up and fields don't stretch the window.
+const PANEL_W: f32 = 460.0;
 
 /// One labelled form row: a fixed-width label cell, then the field widget. Laid
 /// out manually (not via `egui::Grid`) so combo/date widgets don't under-report
@@ -133,7 +134,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .rounding(8.0)
         .inner_margin(12.0)
         .show(ui, |ui| {
-            ui.set_max_width(FORM_W);
+            ui.set_max_width(PANEL_W);
             let f = &mut app.todo_form;
 
             ui.label(
@@ -191,45 +192,71 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
     ui.add_space(8.0);
 
-    // --- filter row ---
-    ui.horizontal(|ui| {
-        ui.label("🔍");
-        ui.add(
-            egui::TextEdit::singleline(&mut app.search)
-                .hint_text("ค้นหา งาน / ชื่อ")
-                .desired_width(200.0),
-        );
-        if ui.button("ล้าง").clicked() {
-            app.search.clear();
-        }
-        ui.separator();
-        ui.label("สถานะ:");
-        egui::ComboBox::from_id_source("todo_status_cb")
-            .selected_text(app.todo_status_filter.label())
-            .show_ui(ui, |ui| {
-                for s in TodoStatusFilter::ALL {
-                    ui.selectable_value(&mut app.todo_status_filter, s, s.label());
-                }
+    // --- search / filter group (matches the form group above) ---
+    egui::Frame::group(ui.style())
+        .rounding(8.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.set_max_width(PANEL_W);
+            ui.label(
+                egui::RichText::new("🔍 ค้นหา / กรอง")
+                    .color(ACCENT_STRONG)
+                    .strong(),
+            );
+            ui.add_space(6.0);
+
+            // Each label+control is its own horizontal so it wraps as one unit
+            // (the label never splits from its widget) on a narrow window.
+            ui.horizontal_wrapped(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("🔍");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.search)
+                            .hint_text("ค้นหา งาน / ชื่อ")
+                            .desired_width(220.0),
+                    );
+                    if ui.button("ล้าง").clicked() {
+                        app.search.clear();
+                    }
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("สถานะ:");
+                    egui::ComboBox::from_id_source("todo_status_cb")
+                        .selected_text(app.todo_status_filter.label())
+                        .show_ui(ui, |ui| {
+                            for s in TodoStatusFilter::ALL {
+                                ui.selectable_value(&mut app.todo_status_filter, s, s.label());
+                            }
+                        });
+                });
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label("ของ:");
+                    egui::ComboBox::from_id_source("todo_who_cb")
+                        .selected_text(app.todo_who_filter.label())
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut app.todo_who_filter,
+                                TodoWhoFilter::All,
+                                TodoWhoFilter::All.label(),
+                            );
+                            for t in ContactType::ALL {
+                                ui.selectable_value(
+                                    &mut app.todo_who_filter,
+                                    TodoWhoFilter::Type(t),
+                                    t.label_th(),
+                                );
+                            }
+                            ui.selectable_value(
+                                &mut app.todo_who_filter,
+                                TodoWhoFilter::Unassigned,
+                                TodoWhoFilter::Unassigned.label(),
+                            );
+                        });
+                });
             });
-        ui.label("ของ:");
-        egui::ComboBox::from_id_source("todo_who_cb")
-            .selected_text(app.todo_who_filter.label())
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut app.todo_who_filter,
-                    TodoWhoFilter::All,
-                    TodoWhoFilter::All.label(),
-                );
-                for t in ContactType::ALL {
-                    ui.selectable_value(&mut app.todo_who_filter, TodoWhoFilter::Type(t), t.label_th());
-                }
-                ui.selectable_value(
-                    &mut app.todo_who_filter,
-                    TodoWhoFilter::Unassigned,
-                    TodoWhoFilter::Unassigned.label(),
-                );
-            });
-    });
+        });
 
     ui.add_space(6.0);
 
