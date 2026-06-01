@@ -9,7 +9,7 @@ enforced in code (not just the UI), and the automated suite passes.
 |---------|--------|
 | `cargo build` (debug) | ✅ Finished, **0 warnings, 0 errors** |
 | `cargo build --release --target x86_64-pc-windows-msvc` | ✅ Finished — `target\x86_64-pc-windows-msvc\release\amway_ccs_tracker.exe` (≈6.1 MB) |
-| `cargo test` | ✅ **26 passed; 0 failed** |
+| `cargo test` | ✅ **27 passed; 0 failed** |
 
 Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 (bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1; plus
@@ -50,6 +50,7 @@ Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 | `list_all_activities_joins_contacts_and_filters` | aggregate history: joins activities to their contact, newest first, filters by contact name and by note text |
 | `activity_kinds_crud_and_rename_relabels_activities` | activity types CRUD: add (rejects blank/duplicate); rename relabels existing activities; delete keeps past activities' text |
 | `customer_rows_resolve_upline_name` | customer list resolves the managing-upline ABO name; `None` (mine) when no sponsor is set |
+| `member_abo_numbers_round_trip` | optional member_no / abo_no persist through insert and update (set, clear, change) |
 | `activities_add_list_delete_and_cascade` | activity log: add/list (newest first)/delete; cascades on contact delete |
 
 ## 3. Business-rule enforcement (verified in code, not just UI)
@@ -86,6 +87,7 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] Advancing past Step 8 shows "last step" message (no crash)
 - [ ] Add customer → appears in Customers list, sorted by score
 - [ ] Customer upline: the add/edit form has a searchable อัพไลน์ (Sponsor) combo; choosing a downline ABO shows it in the Customers list's อัพไลน์ column (else "ฉัน (ME)")
+- [ ] Customer form has an optional เลข Member field; ABO form has an optional เลข ABO field; leaving blank saves fine; values persist after reopening (absent on Prospects)
 - [ ] ABO page lists business partners with rank + upline; add/edit/delete works
 - [ ] ABO 📊 Rank Advisor: edit PPV, see leg counts + qualified rank + condition checklist; ▲ applies an advancing rank
 - [ ] Network → 📊 ประเมินระดับของฉัน (ME): edit my PPV, see my direct-leg counts + qualified rank + checklist; my PPV persists; the central node shows my computed rank

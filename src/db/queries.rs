@@ -22,7 +22,7 @@ use crate::utils::scoring;
 /// other tables (which share column names such as `notes`) without ambiguity.
 const C: &str = "c.id, c.name, c.nickname, c.phone, c.line_id, c.age, c.gender, \
                  c.address, c.network_category, c.contact_type, c.rank, \
-                 c.sponsor_id, c.created_at, c.notes, c.ppv";
+                 c.sponsor_id, c.created_at, c.notes, c.ppv, c.member_no, c.abo_no";
 
 // ---------------------------------------------------------------------------
 // Row mapping helpers
@@ -34,7 +34,7 @@ fn parse_dt(s: &str) -> DateTime<Local> {
         .unwrap_or_else(|_| Local::now())
 }
 
-/// Map the first 15 columns of a row (in `C` order) into a [`Contact`].
+/// Map the first 17 columns of a row (in `C` order) into a [`Contact`].
 fn row_to_contact(row: &Row) -> rusqlite::Result<Contact> {
     let age: Option<i64> = row.get(5)?;
     let gender: String = row.get(6)?;
@@ -59,6 +59,8 @@ fn row_to_contact(row: &Row) -> rusqlite::Result<Contact> {
         created_at: parse_dt(&created),
         notes: row.get(13)?,
         ppv: row.get(14)?,
+        member_no: row.get(15)?,
+        abo_no: row.get(16)?,
     })
 }
 
@@ -111,8 +113,9 @@ pub fn insert_contact(conn: &Connection, c: &Contact) -> Result<i64> {
     conn.execute(
         "INSERT INTO contacts
             (name, nickname, phone, line_id, age, gender, address,
-             network_category, contact_type, rank, sponsor_id, created_at, notes, ppv)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             network_category, contact_type, rank, sponsor_id, created_at, notes, ppv,
+             member_no, abo_no)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         params![
             c.name,
             c.nickname,
@@ -128,6 +131,8 @@ pub fn insert_contact(conn: &Connection, c: &Contact) -> Result<i64> {
             c.created_at.to_rfc3339(),
             c.notes,
             c.ppv,
+            c.member_no,
+            c.abo_no,
         ],
     )?;
     Ok(conn.last_insert_rowid())
@@ -148,8 +153,9 @@ pub fn update_contact(conn: &Connection, c: &Contact) -> Result<()> {
         "UPDATE contacts SET
             name = ?1, nickname = ?2, phone = ?3, line_id = ?4, age = ?5,
             gender = ?6, address = ?7, network_category = ?8, contact_type = ?9,
-            rank = ?10, sponsor_id = ?11, notes = ?12, ppv = ?13
-         WHERE id = ?14",
+            rank = ?10, sponsor_id = ?11, notes = ?12, ppv = ?13,
+            member_no = ?14, abo_no = ?15
+         WHERE id = ?16",
         params![
             c.name,
             c.nickname,
@@ -164,6 +170,8 @@ pub fn update_contact(conn: &Connection, c: &Contact) -> Result<()> {
             c.sponsor_id,
             c.notes,
             c.ppv,
+            c.member_no,
+            c.abo_no,
             c.id,
         ],
     )?;
@@ -799,8 +807,8 @@ pub fn list_prospect_rows(conn: &Connection, query: &str) -> Result<Vec<Prospect
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
-        let total: i64 = row.get(15)?;
-        let step: i64 = row.get(16)?;
+        let total: i64 = row.get(17)?;
+        let step: i64 = row.get(18)?;
         Ok(ProspectRow {
             contact,
             score_total: total as u8,
@@ -832,8 +840,8 @@ pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<Customer
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
-        let total: i64 = row.get(15)?;
-        let upline_name: Option<String> = row.get(16)?;
+        let total: i64 = row.get(17)?;
+        let upline_name: Option<String> = row.get(18)?;
         Ok(CustomerRow {
             contact,
             score_total: total as u8,
@@ -862,7 +870,7 @@ pub fn list_abo_rows(conn: &Connection, query: &str) -> Result<Vec<AboRow>> {
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
-        let upline_name: Option<String> = row.get(15)?;
+        let upline_name: Option<String> = row.get(17)?;
         Ok(AboRow {
             contact,
             upline_name,
@@ -1142,6 +1150,28 @@ mod tests {
         let b = rows.iter().find(|r| r.contact.name == "ลูกค้า B").unwrap();
         assert_eq!(a.upline_name.as_deref(), Some("Mentor"));
         assert_eq!(b.upline_name, None);
+    }
+
+    #[test]
+    fn member_abo_numbers_round_trip() {
+        let conn = mem();
+        let mut c = sample_abo("Biz", Rank::C1);
+        c.member_no = Some("M-001".to_string());
+        c.abo_no = Some("ABO-999".to_string());
+        let id = insert_contact(&conn, &c).unwrap();
+
+        let got = get_contact(&conn, id).unwrap();
+        assert_eq!(got.member_no.as_deref(), Some("M-001"));
+        assert_eq!(got.abo_no.as_deref(), Some("ABO-999"));
+
+        // Update clears one and changes the other.
+        let mut upd = got.clone();
+        upd.member_no = None;
+        upd.abo_no = Some("ABO-1000".to_string());
+        update_contact(&conn, &upd).unwrap();
+        let got2 = get_contact(&conn, id).unwrap();
+        assert_eq!(got2.member_no, None);
+        assert_eq!(got2.abo_no.as_deref(), Some("ABO-1000"));
     }
 
     #[test]

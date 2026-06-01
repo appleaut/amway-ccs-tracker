@@ -54,6 +54,7 @@ A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
 | created_at | TEXT | RFC3339 |
 | notes | TEXT? | |
 | ppv | INTEGER | Personal Point Value (ABO rank qualification); added in schema v2 |
+| member_no / abo_no | TEXT? | optional Amway numbers — `member_no` for Customers, `abo_no` for ABOs; schema v6 |
 
 ### prospect_scores — Sponsor List scoring (1:1 with a Prospect)
 `relationship_closeness` (1–10), `financial_stability`, `leadership`,

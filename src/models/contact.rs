@@ -30,6 +30,9 @@ pub struct Contact {
     pub notes: Option<String>,
     /// Personal Point Value (ยอดส่วนตัว) — used for ABO rank qualification.
     pub ppv: i64,
+    /// Optional Amway member / ABO numbers (entered for Customers and ABOs).
+    pub member_no: Option<String>,
+    pub abo_no: Option<String>,
 }
 
 impl Contact {
@@ -52,6 +55,8 @@ impl Contact {
             created_at: Local::now(),
             notes: None,
             ppv: 0,
+            member_no: None,
+            abo_no: None,
         }
     }
 

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 5;
+const CURRENT_VERSION: i64 = 6;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -149,6 +149,14 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             UPDATE activities SET kind = 'ติดตามผล'       WHERE kind = 'FollowUp';
             UPDATE activities SET kind = 'นัดพบ / พูดคุย'  WHERE kind = 'Meeting';
             UPDATE activities SET kind = 'อื่นๆ'           WHERE kind = 'Other';",
+        )?;
+    }
+
+    if version < 6 {
+        // Optional Amway member / ABO numbers, entered for Customers and ABOs.
+        conn.execute_batch(
+            "ALTER TABLE contacts ADD COLUMN member_no TEXT;
+             ALTER TABLE contacts ADD COLUMN abo_no TEXT;",
         )?;
     }
 

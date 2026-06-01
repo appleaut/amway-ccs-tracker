@@ -56,6 +56,9 @@ pub struct ContactForm {
     pub ppv: i64,
     /// Search text for the sponsor (upline) filterable combo box.
     pub sponsor_filter: String,
+    /// Optional Amway member / ABO numbers (Customers and ABOs).
+    pub member_no: String,
+    pub abo_no: String,
 
     pub notes: String,
 
@@ -91,6 +94,8 @@ impl Default for ContactForm {
             sponsor_id: None,
             ppv: 0,
             sponsor_filter: String::new(),
+            member_no: String::new(),
+            abo_no: String::new(),
             notes: String::new(),
             p_rel: 1,
             p_fin_stab: 1,
@@ -144,6 +149,8 @@ impl ContactForm {
             sponsor_id: c.sponsor_id,
             ppv: c.ppv,
             sponsor_filter: String::new(),
+            member_no: c.member_no.clone().unwrap_or_default(),
+            abo_no: c.abo_no.clone().unwrap_or_default(),
             notes: c.notes.clone().unwrap_or_default(),
             p_rel: p.relationship_closeness,
             p_fin_stab: p.financial_stability,
@@ -369,6 +376,9 @@ fn customer_score_section(
             FIELD_W,
         );
     });
+    field_row(ui, "เลข Member", |ui| {
+        ui.add(egui::TextEdit::singleline(&mut f.member_no).desired_width(FIELD_W));
+    });
 
     field_row(ui, "สายสัมพันธ์ (1-10)", |ui| {
         ui.add(egui::DragValue::new(&mut f.c_rel).range(1..=10));
@@ -428,6 +438,9 @@ fn abo_section(ui: &mut egui::Ui, f: &mut ContactForm, abos: &[Contact], editing
             FIELD_W,
         );
     });
+    field_row(ui, "เลข ABO", |ui| {
+        ui.add(egui::TextEdit::singleline(&mut f.abo_no).desired_width(FIELD_W));
+    });
 }
 
 fn opt(s: &str) -> Option<String> {
@@ -483,6 +496,14 @@ fn save_form(app: &mut AppState) -> Result<String> {
         ContactType::Prospect => None,
     };
     c.ppv = f.ppv;
+    // Customers carry a member number; ABOs carry an ABO number; Prospects none.
+    let (member_no, abo_no) = match f.contact_type {
+        ContactType::Customer => (opt(&f.member_no), None),
+        ContactType::Abo => (None, opt(&f.abo_no)),
+        ContactType::Prospect => (None, None),
+    };
+    c.member_no = member_no;
+    c.abo_no = abo_no;
     c.notes = opt(&f.notes);
 
     let display = c.display_name();
