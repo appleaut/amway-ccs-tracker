@@ -1,56 +1,58 @@
 # Todo Search/Filter Layout — Design Spec
 
 **Date:** 2026-06-02
-**Scope:** Presentational only. Restructure the search/filter bar on the Todo
-List page (`src/ui/todo.rs`, the "filter row" block). No DB / model / query /
-test / behaviour changes — the same search box and two filter dropdowns, wired
-to the same state (`app.search`, `app.todo_status_filter`, `app.todo_who_filter`).
+**Scope:** Presentational only. Lay out the add/edit form and the search/filter
+controls on the Todo List page (`src/ui/todo.rs`). No DB / model / query / test /
+behaviour changes — same controls wired to the same state (`app.search`,
+`app.todo_status_filter`, `app.todo_who_filter`, `app.todo_form`).
 
 ## Problem
 
-The search/filter controls sit in a bare single `ui.horizontal` row
-(🔍 + search + ล้าง + status combo + who combo). It uses plain `horizontal`, so on
-a narrow window it clips/overflows instead of wrapping, and it looks inconsistent
-next to the new bordered "เพิ่มงานใหม่" form group above it.
+The search/filter controls started as a bare single horizontal row that clipped
+on narrow windows and looked inconsistent next to the bordered "เพิ่มงานใหม่" form.
+A first pass wrapped them in a titled group, but testing surfaced two issues:
+the search box / "ล้าง" button / dropdowns did not line up with each other, and
+the search panel stacked *below* the form instead of sitting beside it.
 
-## Design (approved: "Approach 1 — matching titled group + horizontal_wrapped")
+## Design (final)
 
-Wrap the controls in a bordered, titled group matching the form group, and let
-them wrap responsively.
+Lay the form and the search/filter panel out as **two equal, side-by-side
+cards**, and give the search card the **same aligned label/field rows** as the
+form so its controls line up.
 
 ```
-┌─ 🔍 ค้นหา / กรอง ──────────────────────────────┐
-│ [🔍 ค้นหา งาน / ชื่อ............] [ล้าง]            │
-│ สถานะ [ ยังไม่เสร็จ ▼ ]   ของ [ ทั้งหมด ▼ ]        │   narrow window: each group wraps as a unit
-└──────────────────────────────────────────────────┘
+┌─ ➕ เพิ่มงานใหม่ ──────────────┐   ┌─ 🔍 ค้นหา / กรอง ─────────────┐
+│ สิ่งที่ต้องทำ [______________] │   │ ค้นหา   [____________] [ล้าง] │
+│ เกี่ยวกับ    [— ไม่ระบุ — ▼] │   │ สถานะ   [ ยังไม่เสร็จ    ▼ ] │
+│ กำหนดส่ง   [✓ มีกำหนดส่ง] 📅 │   │ ของ     [ ทั้งหมด        ▼ ] │
+│                  [ ➕ เพิ่ม ] │   │                              │
+└──────────────────────────────┘   └──────────────────────────────┘
    ทั้งหมด N รายการ
    <table>
 ```
 
-- **Shared block width:** rename the existing `FORM_W` constant to `PANEL_W`
-  (= 460.0) and use it for both the form group and this search/filter group so
-  the two panels line up.
-- **Group:** `egui::Frame::group(ui.style()).rounding(8.0).inner_margin(12.0)`,
-  `ui.set_max_width(PANEL_W)`, title `🔍 ค้นหา / กรอง` (ACCENT_STRONG, strong).
-- **Body:** `ui.horizontal_wrapped`, containing three units — each a nested
-  `ui.horizontal` so a label stays glued to its control when it wraps:
-  1. `[🔍] [search TextEdit ~220] [ล้าง]`
-  2. `สถานะ: [status combo]`
-  3. `ของ: [who combo]`
-  with a small `add_space(8.0)` between units.
-- Search box widened 200 → 220.
-- **Count line** (`ทั้งหมด N รายการ`) stays in its current position below the group
-  (it is computed after the filters are read; moving it into the group header
-  would lag the filters by one frame).
+- **Two equal columns** via `ui.columns(2, ...)` — form card left, search/filter
+  card right: equal width, adjacent.
+- Each card is an `egui::Frame::group` (rounding 8.0, inner_margin 12.0) with a
+  strong `ACCENT_STRONG` title (`➕ เพิ่มงานใหม่` / `✏ แก้ไขงาน`; `🔍 ค้นหา / กรอง`).
+- **Both cards use the shared `field_row(label, widget)` helper** (a fixed
+  `LABEL_W` label column, then the widget) so every control sits on its own
+  vertically-centred row and lines up. Search-card rows: `ค้นหา` (text + ล้าง),
+  `สถานะ` (combo), `ของ` (combo). This is what fixes the misalignment.
+- **Fields fill their column width** (`ui.available_width()`), so the cards are
+  responsive and never clip. The earlier fixed `PANEL_W` / `FIELD_W` constants
+  are removed; only `LABEL_W` remains.
+- The result count (`ทั้งหมด N รายการ`) and the table below are unchanged.
 
 ## Non-goals
 
-- No change to the form group, the table, filter semantics, or any state.
-- Not moving the count into the group; not adding new filters.
+- No change to filter semantics, the table, or any state/behaviour.
+- Cards always sit side by side (columns split the available width); they do not
+  stack on a very narrow window.
 
 ## Verification
 
-- `cargo build` clean; `cargo test` still 33 passing (no logic touched).
-- Visual (`cargo run`): the search/filter area is a bordered titled panel the
-  same width as the form panel; shrinking the window wraps the status/who groups
-  to a new line instead of clipping; search + both filters still work.
+- `cargo check` clean; `cargo test` still 33 passing (no logic touched).
+- Visual (`cargo run`): two equal cards side by side; inside the search card the
+  text box, the "ล้าง" button, and both dropdowns line up on their rows; resizing
+  the window keeps them side by side with the fields adapting.
