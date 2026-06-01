@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Amway CCS Prospect & Downline Tracker"
 authors = ["Amway CCS Tracker"]
+# PolyForm Noncommercial 1.0.0 is not an SPDX/OSI licence, so point at the file
+# directly and keep the crate off the public crates.io registry.
+license-file = "LICENSE.md"
+publish = false
 
 [dependencies]
 eframe = "0.28"

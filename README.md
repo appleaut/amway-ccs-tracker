@@ -96,3 +96,14 @@ src/
 
 See [docs/SYSTEM_ANALYSIS.md](docs/SYSTEM_ANALYSIS.md) for the domain model and
 [docs/TEST_REPORT.md](docs/TEST_REPORT.md) for the test report and manual QA checklist.
+
+## License
+
+Copyright 2026 appleaut. Released under the **PolyForm Noncommercial License
+1.0.0** — see [LICENSE.md](LICENSE.md). You may use, modify, and share it for
+**noncommercial purposes only**; commercial use is not permitted. This is a
+*source-available* licence, **not** an OSI open-source one.
+
+Bundled third-party components keep their own licences and are unaffected: the
+**Kanit** font under the SIL Open Font License (`assets/fonts/OFL.txt`), and the
+Rust dependencies under their respective (mostly MIT / Apache-2.0) terms.
