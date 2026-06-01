@@ -811,6 +811,7 @@ pub fn set_todo_done(conn: &Connection, id: i64, done: bool) -> Result<()> {
     Ok(())
 }
 
+/// Delete a task.
 pub fn delete_todo(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM todos WHERE id = ?1", [id])?;
     Ok(())
@@ -1440,12 +1441,14 @@ mod tests {
         let in_ten = today + chrono::Duration::days(10);
 
         add_todo(&conn, None, "overdue", Some(yesterday)).unwrap();
+        add_todo(&conn, None, "due today", Some(today)).unwrap();
         add_todo(&conn, None, "due soon", Some(in_three)).unwrap();
         add_todo(&conn, None, "far", Some(in_ten)).unwrap();
         let done_overdue = add_todo(&conn, None, "done overdue", Some(yesterday)).unwrap();
         set_todo_done(&conn, done_overdue, true).unwrap();
 
         assert_eq!(count_overdue_todos(&conn).unwrap(), 1); // only unfinished past-due
-        assert_eq!(count_due_soon_todos(&conn, 7).unwrap(), 1); // in_three only (in_ten beyond 7)
+        // Inclusive on both ends: "due today" and in_three count; in_ten is beyond 7.
+        assert_eq!(count_due_soon_todos(&conn, 7).unwrap(), 2);
     }
 }
