@@ -175,7 +175,7 @@ impl AppState {
             (View::Customers, "💳  ลูกค้า VIP"),
             (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
-            (View::Todos, "🗒️  สิ่งที่ต้องทำ"),
+            (View::Todos, "📅  สิ่งที่ต้องทำ"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Activities, "📝  ประวัติติดต่อ"),
             (View::ActivityKinds, "📋  ประเภทกิจกรรม"),
