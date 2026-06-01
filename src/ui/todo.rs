@@ -1,5 +1,5 @@
 //! Todo List: tasks to do — optionally for a specific contact — with a due date
-//! and a done flag. Add/edit inline (like the Activity Types page); the table
+//! and a done flag. Add/edit via a titled form group above the list; the table
 //! supports status + contact-type filters and text search, toggling done in
 //! place, and edit/delete per row. Overdue (unfinished, past due) shows red.
 
@@ -12,7 +12,29 @@ use crate::models::todo::Todo;
 use crate::ui::confirm::PendingDelete;
 use crate::ui::{filter_combo, ACCENT, ACCENT_STRONG};
 
-/// Inline add/edit form state for the Todo page.
+/// Form-row label column width (px) and the field width that follows it.
+const LABEL_W: f32 = 110.0;
+const FIELD_W: f32 = 300.0;
+/// Max width of the add/edit form group, so fields don't stretch the window.
+const FORM_W: f32 = 460.0;
+
+/// One labelled form row: a fixed-width label cell, then the field widget. Laid
+/// out manually (not via `egui::Grid`) so combo/date widgets don't under-report
+/// their height — same reason as `ui/forms.rs`.
+fn field_row(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(LABEL_W, ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.label(label);
+            },
+        );
+        add(ui);
+    });
+}
+
+/// Add/edit form state for the Todo page.
 pub struct TodoForm {
     /// `Some(id)` when editing an existing todo; `None` when adding.
     pub editing_id: Option<i64>,
@@ -104,53 +126,68 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
     let mut submit = false; // add or save, depending on mode
     let mut cancel_edit = false;
+    let editing = app.todo_form.editing_id.is_some();
 
-    // --- inline add / edit form ---
-    ui.horizontal_wrapped(|ui| {
-        ui.label("สิ่งที่ต้องทำ:");
-        ui.add(
-            egui::TextEdit::singleline(&mut app.todo_form.task)
-                .hint_text("เช่น โทรนัดดูสินค้า Nutrilite")
-                .desired_width(260.0),
-        );
+    // --- add / edit form: a titled group with aligned label/field rows ---
+    egui::Frame::group(ui.style())
+        .rounding(8.0)
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.set_max_width(FORM_W);
+            let f = &mut app.todo_form;
 
-        ui.label("เกี่ยวกับ:");
-        filter_combo(
-            ui,
-            "todo_contact_cb",
-            &mut app.todo_form.contact_id,
-            &mut app.todo_form.contact_filter,
-            Some("— ไม่ระบุ —"),
-            &contact_options,
-            220.0,
-        );
+            ui.label(
+                egui::RichText::new(if editing { "✏ แก้ไขงาน" } else { "➕ เพิ่มงานใหม่" })
+                    .color(ACCENT_STRONG)
+                    .strong(),
+            );
+            ui.add_space(6.0);
 
-        ui.label("กำหนดส่ง:");
-        let mut has_due = app.todo_form.due_date.is_some();
-        ui.checkbox(&mut has_due, "");
-        if has_due {
-            let mut due = app
-                .todo_form
-                .due_date
-                .unwrap_or_else(|| Local::now().date_naive());
-            ui.add(DatePickerButton::new(&mut due).id_source("todo_due_picker"));
-            app.todo_form.due_date = Some(due);
-        } else {
-            app.todo_form.due_date = None;
-            ui.weak("ไม่มีกำหนด");
-        }
+            field_row(ui, "สิ่งที่ต้องทำ", |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut f.task)
+                        .hint_text("เช่น โทรนัดดูสินค้า Nutrilite")
+                        .desired_width(FIELD_W),
+                );
+            });
+            field_row(ui, "เกี่ยวกับ", |ui| {
+                filter_combo(
+                    ui,
+                    "todo_contact_cb",
+                    &mut f.contact_id,
+                    &mut f.contact_filter,
+                    Some("— ไม่ระบุ —"),
+                    &contact_options,
+                    FIELD_W,
+                );
+            });
+            field_row(ui, "กำหนดส่ง", |ui| {
+                let mut has_due = f.due_date.is_some();
+                ui.checkbox(&mut has_due, "มีกำหนดส่ง");
+                if has_due {
+                    let mut due = f.due_date.unwrap_or_else(|| Local::now().date_naive());
+                    ui.add(DatePickerButton::new(&mut due).id_source("todo_due_picker"));
+                    f.due_date = Some(due);
+                } else {
+                    f.due_date = None;
+                    ui.weak("ไม่มีกำหนด");
+                }
+            });
 
-        if app.todo_form.editing_id.is_some() {
-            if ui.add(egui::Button::new("💾 บันทึก").fill(ACCENT)).clicked() {
-                submit = true;
-            }
-            if ui.button("ยกเลิก").clicked() {
-                cancel_edit = true;
-            }
-        } else if ui.add(egui::Button::new("➕ เพิ่ม").fill(ACCENT)).clicked() {
-            submit = true;
-        }
-    });
+            ui.add_space(8.0);
+            field_row(ui, "", |ui| {
+                if editing {
+                    if ui.add(egui::Button::new("💾 บันทึก").fill(ACCENT)).clicked() {
+                        submit = true;
+                    }
+                    if ui.button("ยกเลิก").clicked() {
+                        cancel_edit = true;
+                    }
+                } else if ui.add(egui::Button::new("➕ เพิ่ม").fill(ACCENT)).clicked() {
+                    submit = true;
+                }
+            });
+        });
 
     ui.add_space(8.0);
 
