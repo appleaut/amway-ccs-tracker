@@ -5,7 +5,7 @@ use chrono::Local;
 
 use crate::app::AppState;
 use crate::models::followup::FollowUpSheet;
-use crate::ui::ACCENT_STRONG;
+use crate::ui::{filter_combo, ACCENT_STRONG};
 
 pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(6.0);
@@ -25,21 +25,23 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .filter(|id| abos.iter().any(|a| a.id == *id))
         .unwrap_or(abos[0].id);
 
+    let options: Vec<(i64, String)> =
+        abos.iter().map(|a| (a.id, a.display_name())).collect();
     ui.horizontal(|ui| {
         ui.label("เลือก ABO:");
-        let current = abos
-            .iter()
-            .find(|a| a.id == selected)
-            .map(|a| a.display_name())
-            .unwrap_or_default();
-        egui::ComboBox::from_id_source("abo_select")
-            .selected_text(current)
-            .width(260.0)
-            .show_ui(ui, |ui| {
-                for a in &abos {
-                    ui.selectable_value(&mut selected, a.id, a.display_name());
-                }
-            });
+        let mut sel = Some(selected);
+        filter_combo(
+            ui,
+            "abo_select",
+            &mut sel,
+            &mut app.followup_abo_filter,
+            None,
+            &options,
+            260.0,
+        );
+        if let Some(s) = sel {
+            selected = s;
+        }
     });
     app.selected_abo = Some(selected);
 

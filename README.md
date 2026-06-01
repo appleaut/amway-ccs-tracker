@@ -17,6 +17,7 @@ Thai UI labels throughout; English code identifiers.
 | Database     | `rusqlite` 0.31 (bundled SQLite, sync)   |
 | Date/time    | `chrono` 0.4                             |
 | Errors       | `thiserror` 1                            |
+| Image export | `png` 0.17 (network chart → PNG)         |
 | Target       | `x86_64-pc-windows-msvc`                 |
 
 No async runtime, no network calls, no installer — a single ~6 MB `.exe`.
@@ -44,6 +45,8 @@ cargo test
 * Stored locally in SQLite at `%APPDATA%\AmwayCCSTracker\data.db`
   (created on first launch).
 * Schema is versioned via `PRAGMA user_version` — see [src/db/schema.rs](src/db/schema.rs).
+* Network-chart images (💾 บันทึกรูป) are written to
+  `%APPDATA%\AmwayCCSTracker\exports\network_<timestamp>.png`.
 * The **Settings** screen has a *Load sample data* button that seeds a 3-level
   ABO hierarchy plus example prospects/customers for a quick tour.
 
@@ -77,7 +80,7 @@ src/
 │   ├── customer_list.rs   Customer Name List table (sortable)
 │   ├── abo_list.rs        ABO management table (sortable) + 📊 Rank Advisor
 │   ├── followup.rs        per-ABO checklist with progress bar
-│   ├── downline_tree.rs   radial node chart ("me" centre shows my rank, draggable, auto-arrange, self Rank Advisor)
+│   ├── downline_tree.rs   radial node chart ("me" centre shows my rank, draggable, zoom, auto-arrange, self Rank Advisor, PNG export)
 │   ├── forms.rs           add/edit modal with scoring inputs
 │   ├── confirm.rs         shared delete-confirmation modal
 │   ├── rank_advisor.rs    rank assessment for an ABO and for "me" (PPV + downline legs → qualified rank)

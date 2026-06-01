@@ -132,9 +132,9 @@ NULL, and my rank is derived the same way an ABO's is.
 | Dashboard | Cards: prospects, customers, ABOs, this-month conversions; customer 20-target bar; sponsor-flow overview |
 | Prospects | Sponsor List table, sortable columns, inline editable step (dropdown sets any step) + ▶ advance, search, add/edit/delete |
 | Customers | Customer Name List table, sortable columns, search, add/edit/delete |
-| ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs |
-| Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar |
-| Network | Radial node chart — "me" at the centre (showing my own qualified rank), downline radiating out, straight-line links; nodes are draggable, with an Auto-arrange button to reset the layout, and a 📊 button that opens my self Rank Advisor (my direct legs + my PPV → my qualified rank) |
+| ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs. The add/edit form's upline (sponsor) selector is a searchable combo |
+| Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar; the ABO picker is a searchable combo |
+| Network | Radial node chart — "me" at the centre (showing my own qualified rank), downline radiating out, straight-line links; nodes are draggable, with zoom in/out controls and an Auto-arrange button that resets the layout, drag offsets, and zoom (back to 100%); a 📊 button opens my self Rank Advisor (my direct legs + my PPV → my qualified rank); 💾 บันทึกรูป exports the visible chart as a PNG |
 | Activity Log | Per-contact interaction-history modal (📝 from any list): add/view/delete entries by kind + free note |
 | Activity History | Aggregate timeline of every logged interaction across all contacts, newest first; text search (name/note) + kind filter; jump to a contact's log (📝) or delete an entry (🗑) |
 | Activity Types | Manage the activity-type list (CRUD): add, rename (relabels existing activities), delete (past activities keep their text). Feeds the activity-log dropdown and the history filter |

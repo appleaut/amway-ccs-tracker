@@ -13,7 +13,8 @@ enforced in code (not just the UI), and the automated suite passes.
 
 Dependency versions match the spec: `eframe`/`egui` 0.28, `rusqlite` 0.31
 (bundled), `chrono` 0.4, `serde`/`serde_json` 1, `thiserror` 1; plus
-`egui_extras` 0.28 (`TableBuilder` for full-width tables).
+`egui_extras` 0.28 (`TableBuilder` for full-width tables) and `png` 0.17
+(network-chart PNG export).
 
 ## 2. Automated tests written
 
@@ -89,9 +90,11 @@ Build & launch: `cargo run` (or run the release `.exe`). Use Settings →
 - [ ] 📝 Activity Log (any table): add an entry (kind + note), it appears newest-first; delete works; entries survive app restart
 - [ ] ประวัติติดต่อ (Activity History) menu: lists every entry across all contacts newest-first; search by name/note and the kind filter narrow the list; 📝 opens that contact's log; 🗑 removes an entry
 - [ ] ประเภทกิจกรรม (Activity Types) menu: add a type; rename it (existing history relabels); delete it (🗑 confirms; history keeps its text); blank/duplicate names are rejected; the new type appears in the activity-log dropdown
+- [ ] Follow-Up ABO picker & ABO form's upline selector: typing in the combo filters the list; selecting still works; "ฉัน (ME)" stays available for the sponsor
 - [ ] Follow-up checkboxes persist after closing & reopening the app
 - [ ] Follow-up progress bar updates as items are checked
 - [ ] Network chart renders the seeded hierarchy radially (ฉัน → พิชัย → สมหญิง → วีระ)
+- [ ] Network → 💾 บันทึกรูป writes a PNG of the visible chart to `%APPDATA%\AmwayCCSTracker\exports\` and shows the saved path in the status bar
 - [ ] Clicking a table column header sorts it; clicking again flips direction (▲/▼)
 - [ ] Search box filters prospect/customer lists by name/phone in real time
 - [ ] Edit contact → changes saved and reflected in the list

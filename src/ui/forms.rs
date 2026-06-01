@@ -8,7 +8,7 @@ use crate::app::AppState;
 use crate::error::{AppError, Result};
 use crate::models::contact::{Contact, CustomerScore, ProspectScore};
 use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank};
-use crate::ui::{ACCENT, ACCENT_STRONG};
+use crate::ui::{filter_combo, ACCENT, ACCENT_STRONG};
 use crate::utils::scoring;
 
 /// Shared column widths so every label/input pair lines up across all sections.
@@ -54,6 +54,8 @@ pub struct ContactForm {
     pub rank: Rank,
     pub sponsor_id: Option<i64>,
     pub ppv: i64,
+    /// Search text for the sponsor (upline) filterable combo box.
+    pub sponsor_filter: String,
 
     pub notes: String,
 
@@ -88,6 +90,7 @@ impl Default for ContactForm {
             rank: Rank::Koc,
             sponsor_id: None,
             ppv: 0,
+            sponsor_filter: String::new(),
             notes: String::new(),
             p_rel: 1,
             p_fin_stab: 1,
@@ -140,6 +143,7 @@ impl ContactForm {
             rank: c.rank.unwrap_or(Rank::Koc),
             sponsor_id: c.sponsor_id,
             ppv: c.ppv,
+            sponsor_filter: String::new(),
             notes: c.notes.clone().unwrap_or_default(),
             p_rel: p.relationship_closeness,
             p_fin_stab: p.financial_stability,
@@ -381,25 +385,22 @@ fn abo_section(ui: &mut egui::Ui, f: &mut ContactForm, abos: &[Contact], editing
     field_row(ui, "ยอดส่วนตัว (PPV)", |ui| {
         ui.add(egui::DragValue::new(&mut f.ppv).range(0..=10_000_000).speed(100.0));
     });
+    // An ABO cannot sponsor itself; "ฉัน (ME)" (None) is the implicit root.
+    let sponsor_options: Vec<(i64, String)> = abos
+        .iter()
+        .filter(|a| Some(a.id) != editing_id)
+        .map(|a| (a.id, a.display_name()))
+        .collect();
     field_row(ui, "อัพไลน์ (Sponsor)", |ui| {
-        let current = f
-            .sponsor_id
-            .and_then(|sid| abos.iter().find(|a| a.id == sid))
-            .map(|a| a.display_name())
-            .unwrap_or_else(|| "ฉัน (ME)".to_string());
-        egui::ComboBox::from_id_source("sponsor_cb")
-            .width(FIELD_W)
-            .selected_text(current)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut f.sponsor_id, None, "ฉัน (ME)");
-                for a in abos {
-                    // An ABO cannot sponsor itself.
-                    if Some(a.id) == editing_id {
-                        continue;
-                    }
-                    ui.selectable_value(&mut f.sponsor_id, Some(a.id), a.display_name());
-                }
-            });
+        filter_combo(
+            ui,
+            "sponsor_cb",
+            &mut f.sponsor_id,
+            &mut f.sponsor_filter,
+            Some("ฉัน (ME)"),
+            &sponsor_options,
+            FIELD_W,
+        );
     });
 }
 

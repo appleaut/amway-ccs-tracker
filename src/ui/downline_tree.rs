@@ -16,6 +16,10 @@ use crate::utils::scoring;
 /// Sentinel key for the central "me" node in the offsets map.
 const ME_KEY: i64 = i64::MIN;
 
+/// Zoom bounds for the chart.
+const MIN_ZOOM: f32 = 0.4;
+const MAX_ZOOM: f32 = 3.0;
+
 /// One drawable node. `contact` is `None` for the central "me" node.
 struct Node {
     contact: Option<usize>, // index into the `abos` slice
@@ -42,8 +46,13 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     }
 
     ui.horizontal(|ui| {
-        if ui.button("จัดผังอัตโนมัติ (Auto-arrange)").clicked() {
+        if ui
+            .button("จัดผังอัตโนมัติ (Auto-arrange)")
+            .on_hover_text("จัดผังใหม่ + รีเซ็ตการลาก node และซูมกลับค่าเริ่มต้น")
+            .clicked()
+        {
             app.node_offsets.clear();
+            app.chart_zoom = 1.0;
         }
         if ui
             .add(egui::Button::new("📊 ประเมินระดับของฉัน").fill(ACCENT))
@@ -52,8 +61,28 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         {
             app.me_advisor = true;
         }
-        ui.weak("ลาก node เพื่อย้าย • เลื่อนดูด้วยสกรอลล์ / ล้อเมาส์");
+        if ui
+            .add(egui::Button::new("💾 บันทึกรูป").fill(ACCENT))
+            .on_hover_text("บันทึกภาพผังเครือข่าย (เฉพาะส่วนที่เห็น) เป็นไฟล์ PNG")
+            .clicked()
+        {
+            app.export_chart_pending = true;
+        }
+        ui.separator();
+        ui.label("ซูม:");
+        if ui.button(" - ").on_hover_text("ย่อ").clicked() {
+            app.chart_zoom = (app.chart_zoom / 1.2).clamp(MIN_ZOOM, MAX_ZOOM);
+        }
+        ui.label(format!("{:.0}%", app.chart_zoom * 100.0));
+        if ui.button(" + ").on_hover_text("ขยาย").clicked() {
+            app.chart_zoom = (app.chart_zoom * 1.2).clamp(MIN_ZOOM, MAX_ZOOM);
+        }
     });
+    ui.label(
+        egui::RichText::new("ลาก node เพื่อย้าย • เลื่อนดูด้วยสกรอลล์ / ล้อเมาส์")
+            .weak()
+            .small(),
+    );
     ui.add_space(4.0);
 
     // My own qualified rank (from direct downline legs + my PPV), shown inside
@@ -93,7 +122,8 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut leaves = vec![0usize; nodes.len()];
     compute_leaves(&nodes, 0, &mut leaves);
 
-    let node_r = 30.0_f32;
+    let zoom = app.chart_zoom;
+    let base_node_r = 30.0_f32;
 
     // Choose ring spacing from the layout's own geometry: lay nodes out at unit
     // spacing, find the closest pair, then scale so even that pair clears
@@ -102,7 +132,12 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     // stay tight and fit one screen; dense ones grow (and gain scrollbars).
     assign_pos(&mut nodes, 0, 0.0, TAU, 1.0, egui::Pos2::ZERO, &leaves);
     let dmin = min_pair_dist(&nodes);
-    let ring = ((2.0 * node_r + 40.0) / dmin).clamp(90.0, 800.0);
+    let base_ring = ((2.0 * base_node_r + 40.0) / dmin).clamp(90.0, 800.0);
+
+    // Apply the user's zoom uniformly to node size and ring spacing; everything
+    // downstream (canvas size, node positions, fonts) derives from these.
+    let node_r = base_node_r * zoom;
+    let ring = base_ring * zoom;
 
     // Size the canvas to the layout's actual bounding box (so a tree that leans
     // to one side doesn't force needless scroll), and centre the chart within
@@ -123,7 +158,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
     let offsets = &mut app.node_offsets;
 
-    egui::ScrollArea::both()
+    let out = egui::ScrollArea::both()
         .drag_to_scroll(false)
         .show(ui, |ui| {
             let (resp, painter) =
@@ -157,7 +192,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             }
 
             // Edges first (so nodes draw on top).
-            let edge = egui::Stroke::new(1.5, egui::Color32::from_gray(170));
+            let edge = egui::Stroke::new(1.5 * zoom, egui::Color32::from_gray(170));
             for n in &nodes {
                 for &child in &n.children {
                     painter.line_segment([n.pos, nodes[child].pos], edge);
@@ -169,6 +204,9 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 draw_node(&painter, n, &abos, node_r, &me_inside);
             }
         });
+
+    // Remember the chart's on-screen viewport so the export can crop to it.
+    app.chart_export_rect = Some(out.inner_rect);
 }
 
 /// Recursively create nodes for `contact_idx` and its downline. Returns the new
@@ -287,20 +325,22 @@ fn draw_node(painter: &egui::Painter, node: &Node, abos: &[Contact], r: f32, me_
         }
     };
 
+    // Scale strokes / fonts with the node radius so they track the zoom level.
+    let s = (r / 30.0).max(0.4);
     painter.circle_filled(node.pos, r, fill);
-    painter.circle_stroke(node.pos, r, egui::Stroke::new(2.0, ACCENT_STRONG));
+    painter.circle_stroke(node.pos, r, egui::Stroke::new(2.0 * s, ACCENT_STRONG));
     painter.text(
         node.pos,
         egui::Align2::CENTER_CENTER,
         inside_text,
-        egui::FontId::proportional(12.0),
+        egui::FontId::proportional(12.0 * s),
         inside_color,
     );
     painter.text(
-        node.pos + egui::vec2(0.0, r + 3.0),
+        node.pos + egui::vec2(0.0, r + 3.0 * s),
         egui::Align2::CENTER_TOP,
         below,
-        egui::FontId::proportional(13.0),
+        egui::FontId::proportional(13.0 * s),
         name_color,
     );
 }

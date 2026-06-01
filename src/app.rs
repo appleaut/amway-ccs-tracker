@@ -4,6 +4,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use chrono::Local;
+
 use crate::db::DbConnection;
 use crate::error::{AppError, Result};
 use crate::models::contact::{Contact, CustomerScore, ProspectScore};
@@ -24,6 +26,8 @@ pub struct AppState {
     pub form: ContactForm,
     /// ABO currently selected in the Follow-Up view.
     pub selected_abo: Option<i64>,
+    /// Search text for the Follow-Up ABO picker (filterable combo box).
+    pub followup_abo_filter: String,
     /// Human-readable database location, shown in Settings.
     pub db_location: String,
     /// Name of the loaded Thai font (or a note if none was found).
@@ -41,6 +45,8 @@ pub struct AppState {
     /// User-dragged position offsets for downline-chart nodes, keyed by contact
     /// id (the central "me" node uses `i64::MIN`). Empty = pure auto-layout.
     pub node_offsets: HashMap<i64, egui::Vec2>,
+    /// Zoom factor for the network chart (1.0 = default; reset by Auto-arrange).
+    pub chart_zoom: f32,
     /// Row awaiting delete confirmation (a contact or an activity type).
     pub pending_delete: Option<ui::confirm::PendingDelete>,
     /// ABO id currently open in the Rank Advisor modal.
@@ -58,6 +64,15 @@ pub struct AppState {
     pub kind_draft: String,
     /// Activity-type id being renamed on the Activity Types page (`None` = add).
     pub kind_edit: Option<i64>,
+    /// Network-chart PNG export. The button sets `export_chart_pending`; we then
+    /// request a framebuffer screenshot and, once it arrives, crop it to
+    /// `chart_export_rect` (the chart's on-screen viewport) and save the file.
+    pub export_chart_pending: bool,
+    pub awaiting_screenshot: bool,
+    pub chart_export_rect: Option<egui::Rect>,
+    /// Path of the most recently saved image — shown as a clickable link in the
+    /// status bar (click → open it with the OS default app).
+    pub last_saved_image: Option<String>,
 }
 
 impl AppState {
@@ -76,6 +91,7 @@ impl AppState {
             status: None,
             form: ContactForm::default(),
             selected_abo: None,
+            followup_abo_filter: String::new(),
             db_location: path.display().to_string(),
             font_name,
             pv_input: String::new(),
@@ -86,6 +102,7 @@ impl AppState {
             customer_sort: ui::SortSpec::new(2, false), // score, descending
             abo_sort: ui::SortSpec::new(0, true),       // name, ascending
             node_offsets: HashMap::new(),
+            chart_zoom: 1.0,
             pending_delete: None,
             rank_advisor: None,
             me_advisor: false,
@@ -95,18 +112,32 @@ impl AppState {
             history_kind: None,
             kind_draft: String::new(),
             kind_edit: None,
+            export_chart_pending: false,
+            awaiting_screenshot: false,
+            chart_export_rect: None,
+            last_saved_image: None,
         })
     }
 
     /// Record an error for display.
     pub fn set_error<E: std::fmt::Display>(&mut self, e: E) {
         self.last_error = Some(e.to_string());
+        self.last_saved_image = None;
     }
 
     /// Record a transient status message (clears any prior error).
     pub fn set_status(&mut self, s: impl Into<String>) {
         self.last_error = None;
         self.status = Some(s.into());
+        self.last_saved_image = None;
+    }
+
+    /// Record a status whose `path` is shown as a clickable link in the status
+    /// bar (click → open with the OS default app).
+    pub fn set_saved_image(&mut self, msg: impl Into<String>, path: String) {
+        self.last_error = None;
+        self.status = Some(msg.into());
+        self.last_saved_image = Some(path);
     }
 
     /// Unwrap a `Result`, surfacing any error in the status bar and falling back
@@ -164,7 +195,9 @@ impl AppState {
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let error = self.last_error.clone();
         let status = self.status.clone();
+        let saved = self.last_saved_image.clone();
         let mut clear = false;
+        let mut open_path: Option<String> = None;
         ui.horizontal(|ui| {
             if let Some(err) = error {
                 ui.colored_label(egui::Color32::from_rgb(0xFF, 0x6E, 0x6E), format!("⚠ {err}"));
@@ -173,6 +206,21 @@ impl AppState {
                 }
             } else if let Some(s) = status {
                 ui.colored_label(ACCENT_STRONG, format!("✅ {s}"));
+                if let Some(path) = &saved {
+                    ui.label("→");
+                    let link = ui
+                        .add(
+                            egui::Label::new(
+                                egui::RichText::new(path.as_str()).color(ACCENT).underline(),
+                            )
+                            .sense(egui::Sense::click()),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text("คลิกเพื่อเปิดรูป");
+                    if link.clicked() {
+                        open_path = Some(path.clone());
+                    }
+                }
             } else {
                 ui.label(
                     egui::RichText::new("พร้อมใช้งาน • Amway CCS Tracker v0.1")
@@ -183,6 +231,11 @@ impl AppState {
         });
         if clear {
             self.last_error = None;
+        }
+        if let Some(path) = open_path {
+            if let Err(e) = open_in_os(&path) {
+                self.set_error(e);
+            }
         }
     }
 
@@ -392,7 +445,98 @@ impl eframe::App for AppState {
         ui::rank_advisor::render(self, ctx);
         ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);
+
+        self.handle_chart_export(ctx);
     }
+}
+
+impl AppState {
+    /// Drive the network-chart PNG export: request a framebuffer screenshot,
+    /// then crop it to the chart's viewport and save once the reply arrives
+    /// (one frame later).
+    fn handle_chart_export(&mut self, ctx: &egui::Context) {
+        if self.export_chart_pending {
+            self.export_chart_pending = false;
+            self.awaiting_screenshot = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            ctx.request_repaint();
+        }
+        if !self.awaiting_screenshot {
+            return;
+        }
+        ctx.request_repaint();
+        let shot = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        if let Some(image) = shot {
+            self.awaiting_screenshot = false;
+            let ppp = ctx.pixels_per_point();
+            match save_chart_png(&image, self.chart_export_rect, ppp) {
+                Ok(path) => self.set_saved_image("บันทึกรูปผังเครือข่ายแล้ว", path),
+                Err(e) => self.set_error(e),
+            }
+        }
+    }
+}
+
+/// Crop `image` (a full-window framebuffer) to `rect` (chart viewport, in
+/// points) and write it as a PNG under `…/AmwayCCSTracker/exports/`. Returns the
+/// saved path.
+fn save_chart_png(image: &egui::ColorImage, rect: Option<egui::Rect>, ppp: f32) -> Result<String> {
+    let [iw, ih] = image.size;
+    let (x0, y0, x1, y1) = match rect {
+        Some(r) => (
+            (r.min.x * ppp).floor().max(0.0) as usize,
+            (r.min.y * ppp).floor().max(0.0) as usize,
+            ((r.max.x * ppp).ceil() as usize).min(iw),
+            ((r.max.y * ppp).ceil() as usize).min(ih),
+        ),
+        None => (0, 0, iw, ih),
+    };
+    let w = x1.saturating_sub(x0);
+    let h = y1.saturating_sub(y0);
+    if w == 0 || h == 0 {
+        return Err(AppError::validation("พื้นที่ผังว่างเปล่า บันทึกรูปไม่ได้"));
+    }
+
+    let mut rgba = Vec::with_capacity(w * h * 4);
+    for y in y0..y1 {
+        let row = y * iw;
+        for x in x0..x1 {
+            let c = image.pixels[row + x];
+            rgba.extend_from_slice(&[c.r(), c.g(), c.b(), c.a()]);
+        }
+    }
+
+    let dir = db_path()?
+        .parent()
+        .map(|p| p.join("exports"))
+        .ok_or_else(|| AppError::validation("ไม่พบโฟลเดอร์สำหรับบันทึกรูป"))?;
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("network_{}.png", Local::now().format("%Y%m%d_%H%M%S")));
+
+    let file = std::fs::File::create(&path)?;
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), w as u32, h as u32);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder
+        .write_header()
+        .map_err(|e| AppError::validation(format!("เขียนไฟล์ PNG ไม่สำเร็จ: {e}")))?;
+    writer
+        .write_image_data(&rgba)
+        .map_err(|e| AppError::validation(format!("เขียนไฟล์ PNG ไม่สำเร็จ: {e}")))?;
+
+    Ok(path.display().to_string())
+}
+
+/// Open a file with the OS default handler (Windows Explorer launches the file's
+/// associated app). Fire-and-forget — we don't wait on the child.
+fn open_in_os(path: &str) -> Result<()> {
+    std::process::Command::new("explorer").arg(path).spawn()?;
+    Ok(())
 }
 
 /// Resolve `%APPDATA%\AmwayCCSTracker\data.db`, creating the directory.

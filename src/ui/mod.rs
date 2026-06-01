@@ -94,6 +94,119 @@ pub fn metric_card(ui: &mut egui::Ui, title: &str, value: &str, accent: egui::Co
         });
 }
 
+/// A combo box whose popup carries a search field that filters the options —
+/// egui's built-in `ComboBox` has no filtering, so this fills the gap.
+///
+/// `selected` is the chosen id (`None` shows `none_label`, when given, as both
+/// the closed text and a top entry that clears the selection). `options` are
+/// `(id, label)` pairs. `filter` holds the per-combo search text (kept in app
+/// state so it survives the frames the popup is open).
+pub fn filter_combo(
+    ui: &mut egui::Ui,
+    id_source: &str,
+    selected: &mut Option<i64>,
+    filter: &mut String,
+    none_label: Option<&str>,
+    options: &[(i64, String)],
+    width: f32,
+) {
+    let popup_id = ui.make_persistent_id(id_source);
+
+    let selected_text = match *selected {
+        Some(id) => options
+            .iter()
+            .find(|(oid, _)| *oid == id)
+            .map(|(_, label)| label.clone())
+            .unwrap_or_else(|| "—".to_string()),
+        None => none_label.unwrap_or("—").to_string(),
+    };
+
+    // egui's `ComboBox` closes its popup on *any* click (CloseOnClick), so a
+    // search field inside it is unusable. Build the popup by hand with
+    // CloseOnClickOutside and close it ourselves once a choice is made.
+    let button = combo_button(ui, &selected_text, width);
+    if button.clicked() {
+        filter.clear();
+        ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+    }
+
+    let before = *selected;
+    egui::popup::popup_below_widget(
+        ui,
+        popup_id,
+        &button,
+        egui::popup::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.set_min_width(width);
+            let search = ui.add(
+                egui::TextEdit::singleline(filter)
+                    .hint_text("พิมพ์เพื่อค้นหา…")
+                    .desired_width(f32::INFINITY),
+            );
+            // Focus the search field on open so the user can type immediately.
+            if !search.has_focus() {
+                search.request_focus();
+            }
+            ui.add_space(2.0);
+
+            let needle = filter.trim().to_lowercase();
+            let matches =
+                |label: &str| needle.is_empty() || label.to_lowercase().contains(&needle);
+
+            egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                let mut shown = 0usize;
+                if let Some(label) = none_label {
+                    if matches(label) {
+                        ui.selectable_value(selected, None, label);
+                        shown += 1;
+                    }
+                }
+                for (id, label) in options {
+                    if matches(label) {
+                        ui.selectable_value(selected, Some(*id), label.as_str());
+                        shown += 1;
+                    }
+                }
+                if shown == 0 {
+                    ui.weak("— ไม่พบ —");
+                }
+            });
+        },
+    );
+
+    // A choice was made → reset the filter and close the popup.
+    if *selected != before {
+        filter.clear();
+        ui.memory_mut(|mem| mem.close_popup());
+    }
+}
+
+/// Draw a combo-box-style control (framed, left-aligned text, right ▼ arrow)
+/// sized to `width`, returning its click response.
+fn combo_button(ui: &mut egui::Ui, text: &str, width: f32) -> egui::Response {
+    let height = ui.spacing().interact_size.y.max(22.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
+    let visuals = ui.style().interact(&resp);
+    let painter = ui.painter().with_clip_rect(rect);
+    painter.rect(rect, visuals.rounding, visuals.weak_bg_fill, visuals.bg_stroke);
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    painter.text(
+        rect.left_center() + egui::vec2(8.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        text,
+        font.clone(),
+        visuals.text_color(),
+    );
+    painter.text(
+        rect.right_center() - egui::vec2(8.0, 0.0),
+        egui::Align2::RIGHT_CENTER,
+        "▼",
+        font,
+        visuals.text_color(),
+    );
+    resp
+}
+
 /// Colour a score relative to its "high" threshold: green at/above, amber from
 /// half-way, otherwise muted.
 pub fn score_color(total: u8, high: u8) -> egui::Color32 {
