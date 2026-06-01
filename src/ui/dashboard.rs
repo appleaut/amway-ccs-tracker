@@ -46,7 +46,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             ui,
             "งานเลยกำหนด (Overdue)",
             &overdue.to_string(),
-            egui::Color32::from_rgb(0xD3, 0x2F, 0x2F), // red
+            egui::Color32::from_rgb(0xD3, 0x2F, 0x2F), // red 700
         )
         .clicked()
         {
