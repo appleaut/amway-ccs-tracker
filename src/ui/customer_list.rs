@@ -50,6 +50,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         }),
         1 => rows.sort_by(|a, b| a.contact.phone.cmp(&b.contact.phone)),
         2 => rows.sort_by_key(|a| a.score_total),
+        3 => rows.sort_by(|a, b| a.upline_name.cmp(&b.upline_name)),
         _ => {}
     }
     if !sort.ascending {
@@ -68,12 +69,14 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .column(Column::remainder().at_least(160.0)) // ชื่อ
         .column(Column::auto().at_least(120.0)) // เบอร์โทร
         .column(Column::auto()) // คะแนน
+        .column(Column::remainder().at_least(120.0)) // อัพไลน์
         .column(Column::auto()) // จัดการ
         .header(28.0, |mut header| {
-            let cols: [(&str, Option<usize>); 4] = [
+            let cols: [(&str, Option<usize>); 5] = [
                 ("ชื่อ", Some(0)),
                 ("เบอร์โทร", Some(1)),
                 ("คะแนน", Some(2)),
+                ("อัพไลน์", Some(3)),
                 ("จัดการ", None),
             ];
             for (label, col) in cols {
@@ -107,6 +110,14 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                             egui::RichText::new(row.score_total.to_string())
                                 .color(ui::score_color(row.score_total, 10))
                                 .strong(),
+                        );
+                    });
+                    tr.col(|ui| {
+                        // No stored sponsor means this customer is mine directly.
+                        ui.label(
+                            row.upline_name
+                                .clone()
+                                .unwrap_or_else(|| "ฉัน (ME)".to_string()),
                         );
                     });
                     tr.col(|ui| {

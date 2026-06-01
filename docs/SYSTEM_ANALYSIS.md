@@ -50,7 +50,7 @@ A deleted sponsor sets its downline's sponsor_id to NULL (downline preserved).
 | network_category | TEXT | Family/Relative/Friend/Coworker/Partner/Acquaintance/Stranger |
 | contact_type | TEXT | `Prospect` / `Customer` / `ABO` |
 | rank | TEXT? | ABO only: `KOC`/`C1`/`CL`/`CL15`/`CL21` |
-| sponsor_id | INTEGER? FK→contacts | upline ABO |
+| sponsor_id | INTEGER? FK→contacts | upline ABO (set for ABOs and Customers; the target must be an ABO) |
 | created_at | TEXT | RFC3339 |
 | notes | TEXT? | |
 | ppv | INTEGER | Personal Point Value (ABO rank qualification); added in schema v2 |
@@ -131,7 +131,7 @@ NULL, and my rank is derived the same way an ABO's is.
 |--------|---------|
 | Dashboard | Cards: prospects, customers, ABOs, this-month conversions; customer 20-target bar; sponsor-flow overview |
 | Prospects | Sponsor List table, sortable columns, inline editable step (dropdown sets any step) + ▶ advance, search, add/edit/delete |
-| Customers | Customer Name List table, sortable columns, search, add/edit/delete |
+| Customers | Customer Name List table, sortable columns (incl. upline), search, add/edit/delete; the form has a searchable upline (Sponsor) selector so a VIP customer can be assigned to a downline ABO we manage (or "ฉัน (ME)" = ours directly) |
 | ABO | Business-partner management table (sortable: name/phone/rank/upline), search, add/edit/delete, + Rank Advisor (📊) computing the qualified rank from PPV + downline legs. The add/edit form's upline (sponsor) selector is a searchable combo |
 | Follow Up | Per-ABO BK1/BK2/C1/Conference checklist with completion progress bar; the ABO picker is a searchable combo |
 | Network | Radial node chart — "me" at the centre (showing my own qualified rank), downline radiating out, straight-line links; nodes are draggable, with zoom in/out controls and an Auto-arrange button that resets the layout, drag offsets, and zoom (back to 100%); a 📊 button opens my self Rank Advisor (my direct legs + my PPV → my qualified rank); 💾 บันทึกรูป exports the visible chart as a PNG |

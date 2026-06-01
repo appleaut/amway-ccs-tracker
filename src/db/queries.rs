@@ -814,14 +814,17 @@ pub fn list_prospect_rows(conn: &Connection, query: &str) -> Result<Vec<Prospect
 pub struct CustomerRow {
     pub contact: Contact,
     pub score_total: u8,
+    /// Resolved name of the managing upline ABO, if any (None = mine directly).
+    pub upline_name: Option<String>,
 }
 
 pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<CustomerRow>> {
     let like = format!("%{query}%");
     let sql = format!(
-        "SELECT {C}, COALESCE(cs.total, 0)
+        "SELECT {C}, COALESCE(cs.total, 0), up.name
          FROM contacts c
          LEFT JOIN customer_scores cs ON cs.contact_id = c.id
+         LEFT JOIN contacts up ON up.id = c.sponsor_id
          WHERE c.contact_type = 'Customer'
            AND (c.name LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1 OR IFNULL(c.phone,'') LIKE ?1)
          ORDER BY COALESCE(cs.total, 0) DESC, c.name ASC"
@@ -830,9 +833,11 @@ pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<Customer
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
         let total: i64 = row.get(15)?;
+        let upline_name: Option<String> = row.get(16)?;
         Ok(CustomerRow {
             contact,
             score_total: total as u8,
+            upline_name,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -1116,6 +1121,27 @@ mod tests {
         delete_activity_kind(&conn, id).unwrap();
         assert!(!list_activity_kinds(&conn).unwrap().iter().any(|k| k.id == id));
         assert_eq!(list_activities(&conn, cid).unwrap()[0].kind, "จัดส่ง");
+    }
+
+    #[test]
+    fn customer_rows_resolve_upline_name() {
+        let conn = mem();
+        let up = insert_contact(&conn, &sample_abo("Mentor", Rank::Cl)).unwrap();
+        // A customer managed by a downline ABO, and one managed by me directly.
+        let mut managed = sample_prospect("ลูกค้า A");
+        managed.contact_type = ContactType::Customer;
+        managed.sponsor_id = Some(up);
+        insert_contact(&conn, &managed).unwrap();
+        let mut mine = sample_prospect("ลูกค้า B");
+        mine.contact_type = ContactType::Customer;
+        insert_contact(&conn, &mine).unwrap();
+
+        let rows = list_customer_rows(&conn, "").unwrap();
+        assert_eq!(rows.len(), 2);
+        let a = rows.iter().find(|r| r.contact.name == "ลูกค้า A").unwrap();
+        let b = rows.iter().find(|r| r.contact.name == "ลูกค้า B").unwrap();
+        assert_eq!(a.upline_name.as_deref(), Some("Mentor"));
+        assert_eq!(b.upline_name, None);
     }
 
     #[test]

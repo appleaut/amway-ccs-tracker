@@ -267,7 +267,9 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
 
                     match f.contact_type {
                         ContactType::Prospect => prospect_score_section(ui, f),
-                        ContactType::Customer => customer_score_section(ui, f),
+                        ContactType::Customer => {
+                            customer_score_section(ui, f, &abos, editing_id)
+                        }
                         ContactType::Abo => abo_section(ui, f, &abos, editing_id),
                     }
 
@@ -341,9 +343,33 @@ fn prospect_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
     );
 }
 
-fn customer_score_section(ui: &mut egui::Ui, f: &mut ContactForm) {
+fn customer_score_section(
+    ui: &mut egui::Ui,
+    f: &mut ContactForm,
+    abos: &[Contact],
+    editing_id: Option<i64>,
+) {
     ui.label(egui::RichText::new("คะแนนลูกค้า (Customer List)").color(ACCENT_STRONG).strong());
     ui.add_space(4.0);
+
+    // A VIP customer may belong to a downline ABO we manage; "ฉัน (ME)" = ours.
+    let sponsor_options: Vec<(i64, String)> = abos
+        .iter()
+        .filter(|a| Some(a.id) != editing_id)
+        .map(|a| (a.id, a.display_name()))
+        .collect();
+    field_row(ui, "อัพไลน์ (Sponsor)", |ui| {
+        filter_combo(
+            ui,
+            "customer_sponsor_cb",
+            &mut f.sponsor_id,
+            &mut f.sponsor_filter,
+            Some("ฉัน (ME)"),
+            &sponsor_options,
+            FIELD_W,
+        );
+    });
+
     field_row(ui, "สายสัมพันธ์ (1-10)", |ui| {
         ui.add(egui::DragValue::new(&mut f.c_rel).range(1..=10));
     });
@@ -451,10 +477,10 @@ fn save_form(app: &mut AppState) -> Result<String> {
     } else {
         None
     };
-    c.sponsor_id = if f.contact_type == ContactType::Abo {
-        f.sponsor_id
-    } else {
-        None
+    // ABOs and Customers can have an upline (the managing ABO); Prospects don't.
+    c.sponsor_id = match f.contact_type {
+        ContactType::Abo | ContactType::Customer => f.sponsor_id,
+        ContactType::Prospect => None,
     };
     c.ppv = f.ppv;
     c.notes = opt(&f.notes);
