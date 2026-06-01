@@ -18,7 +18,7 @@ pub struct Todo {
 impl Todo {
     /// True when the task is unfinished and its due date is strictly before `today`.
     pub fn is_overdue(&self, today: NaiveDate) -> bool {
-        !self.done && self.due_date.map_or(false, |d| d < today)
+        !self.done && self.due_date.is_some_and(|d| d < today)
     }
 }
 

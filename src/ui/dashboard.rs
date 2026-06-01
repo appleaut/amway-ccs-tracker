@@ -56,6 +56,8 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     if go_overdue {
         app.view = ui::View::Todos;
         app.todo_status_filter = ui::todo::TodoStatusFilter::Overdue;
+        // Show every overdue task, regardless of any prior contact-type filter.
+        app.todo_who_filter = ui::todo::TodoWhoFilter::All;
     }
 
     ui.add_space(18.0);
