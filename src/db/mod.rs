@@ -9,6 +9,8 @@ pub mod schema;
 
 use std::path::Path;
 
+use chrono::NaiveDate;
+
 use rusqlite::Connection;
 
 use crate::error::Result;
@@ -16,7 +18,8 @@ use crate::models::activity::Activity;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
 use crate::models::enums::{ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
-use queries::{AboRow, ActivityKindRow, ActivityLogRow, CustomerRow, ProspectRow};
+use crate::models::todo::Todo;
+use queries::{AboRow, ActivityKindRow, ActivityLogRow, CustomerRow, ProspectRow, TodoRow};
 
 /// Owns the SQLite connection and exposes typed, validated operations.
 pub struct DbConnection {
@@ -138,6 +141,35 @@ impl DbConnection {
     }
     pub fn save_follow_up(&self, f: &FollowUpSheet) -> Result<()> {
         queries::save_follow_up(&self.conn, f)
+    }
+
+    // --- todos ------------------------------------------------------------
+
+    pub fn add_todo(
+        &self,
+        contact_id: Option<i64>,
+        task: &str,
+        due_date: Option<NaiveDate>,
+    ) -> Result<i64> {
+        queries::add_todo(&self.conn, contact_id, task, due_date)
+    }
+    pub fn update_todo(&self, t: &Todo) -> Result<()> {
+        queries::update_todo(&self.conn, t)
+    }
+    pub fn set_todo_done(&self, id: i64, done: bool) -> Result<()> {
+        queries::set_todo_done(&self.conn, id, done)
+    }
+    pub fn delete_todo(&self, id: i64) -> Result<()> {
+        queries::delete_todo(&self.conn, id)
+    }
+    pub fn list_todos(&self, query: &str) -> Result<Vec<TodoRow>> {
+        queries::list_todos(&self.conn, query)
+    }
+    pub fn count_overdue_todos(&self) -> Result<i64> {
+        queries::count_overdue_todos(&self.conn)
+    }
+    pub fn count_due_soon_todos(&self, days: i64) -> Result<i64> {
+        queries::count_due_soon_todos(&self.conn, days)
     }
 
     // --- aggregates / table rows -----------------------------------------
