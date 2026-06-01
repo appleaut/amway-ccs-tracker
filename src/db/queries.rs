@@ -16,6 +16,7 @@ use crate::models::activity::Activity;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
 use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank, SponsorStep};
 use crate::models::followup::FollowUpSheet;
+use crate::models::todo::Todo;
 use crate::utils::scoring;
 
 /// The 14 contact columns, qualified with the `c` alias so queries can join
@@ -760,6 +761,128 @@ pub fn save_follow_up(conn: &Connection, f: &FollowUpSheet) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Todos
+// ---------------------------------------------------------------------------
+
+/// A todo joined with its contact (name + type), for the list view.
+pub struct TodoRow {
+    pub todo: Todo,
+    pub contact_name: Option<String>,
+    pub contact_type: Option<ContactType>,
+}
+
+/// Add a task; returns the new id. `task` is trimmed and must be non-empty.
+pub fn add_todo(
+    conn: &Connection,
+    contact_id: Option<i64>,
+    task: &str,
+    due_date: Option<NaiveDate>,
+) -> Result<i64> {
+    let task = task.trim();
+    if task.is_empty() {
+        return Err(AppError::validation("กรุณากรอกสิ่งที่ต้องทำ"));
+    }
+    let due = due_date.map(|d| d.format("%Y-%m-%d").to_string());
+    conn.execute(
+        "INSERT INTO todos (contact_id, task, due_date, done, created_at)
+         VALUES (?1, ?2, ?3, 0, ?4)",
+        params![contact_id, task, due, Local::now().to_rfc3339()],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Update a task's contact, text, and due date (not `done` / `created_at`).
+pub fn update_todo(conn: &Connection, t: &Todo) -> Result<()> {
+    let task = t.task.trim();
+    if task.is_empty() {
+        return Err(AppError::validation("กรุณากรอกสิ่งที่ต้องทำ"));
+    }
+    let due = t.due_date.map(|d| d.format("%Y-%m-%d").to_string());
+    conn.execute(
+        "UPDATE todos SET contact_id = ?1, task = ?2, due_date = ?3 WHERE id = ?4",
+        params![t.contact_id, task, due, t.id],
+    )?;
+    Ok(())
+}
+
+/// Set a task's done flag.
+pub fn set_todo_done(conn: &Connection, id: i64, done: bool) -> Result<()> {
+    conn.execute("UPDATE todos SET done = ?1 WHERE id = ?2", params![done as i64, id])?;
+    Ok(())
+}
+
+pub fn delete_todo(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM todos WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+fn row_to_todo_row(row: &Row) -> rusqlite::Result<TodoRow> {
+    let due: Option<String> = row.get(3)?;
+    let created: String = row.get(5)?;
+    let name: Option<String> = row.get(6)?;
+    let nickname: Option<String> = row.get(7)?;
+    let ctype: Option<String> = row.get(8)?;
+    let contact_name = name.map(|n| match nickname {
+        Some(nk) if !nk.is_empty() => format!("{n} ({nk})"),
+        _ => n,
+    });
+    Ok(TodoRow {
+        todo: Todo {
+            id: row.get(0)?,
+            contact_id: row.get(1)?,
+            task: row.get(2)?,
+            due_date: due.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
+            done: row.get::<_, i64>(4)? != 0,
+            created_at: parse_dt(&created),
+        },
+        contact_name,
+        contact_type: ctype.map(|s| ContactType::from_db(&s)),
+    })
+}
+
+/// All todos, joined with their contact, filtered by a substring of the task
+/// text or the contact name/nickname. Ordered: pending first, then soonest due
+/// date (no-due-date last), newest as the tiebreak.
+pub fn list_todos(conn: &Connection, query: &str) -> Result<Vec<TodoRow>> {
+    let like = format!("%{query}%");
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.contact_id, t.task, t.due_date, t.done, t.created_at,
+                c.name, c.nickname, c.contact_type
+         FROM todos t
+         LEFT JOIN contacts c ON c.id = t.contact_id
+         WHERE t.task LIKE ?1 OR IFNULL(c.name,'') LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1
+         ORDER BY t.done ASC, (t.due_date IS NULL) ASC, t.due_date ASC, t.id DESC",
+    )?;
+    let rows = stmt.query_map([like], row_to_todo_row)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Count unfinished todos whose due date is before today.
+pub fn count_overdue_todos(conn: &Connection) -> Result<i64> {
+    let today = Local::now().date_naive().format("%Y-%m-%d").to_string();
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM todos WHERE done = 0 AND due_date IS NOT NULL AND due_date < ?1",
+        [today],
+        |r| r.get(0),
+    )?)
+}
+
+/// Count unfinished todos due between today and today+`days` (inclusive).
+pub fn count_due_soon_todos(conn: &Connection, days: i64) -> Result<i64> {
+    let today = Local::now().date_naive();
+    let until = today + chrono::Duration::days(days);
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM todos
+         WHERE done = 0 AND due_date IS NOT NULL AND due_date >= ?1 AND due_date <= ?2",
+        params![
+            today.format("%Y-%m-%d").to_string(),
+            until.format("%Y-%m-%d").to_string()
+        ],
+        |r| r.get(0),
+    )?)
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard aggregates
 // ---------------------------------------------------------------------------
 
@@ -890,6 +1013,10 @@ mod tests {
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         schema::migrate(&conn).unwrap();
         conn
+    }
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
     }
 
     fn sample_prospect(name: &str) -> Contact {
@@ -1231,5 +1358,94 @@ mod tests {
         c.contact_type = ContactType::Customer;
         update_contact(&conn, &c).unwrap();
         assert!(get_prospect_score(&conn, id).unwrap().is_none());
+    }
+
+    #[test]
+    fn todo_add_list_update_delete() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ตูน")).unwrap();
+        let id = add_todo(&conn, Some(cid), "  โทรนัด  ", Some(d("2026-06-10"))).unwrap();
+        // Blank task is rejected.
+        assert!(add_todo(&conn, None, "   ", None).is_err());
+
+        let rows = list_todos(&conn, "").unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!(r.todo.task, "โทรนัด"); // trimmed
+        assert_eq!(r.todo.due_date, Some(d("2026-06-10")));
+        assert!(!r.todo.done);
+        assert_eq!(r.contact_name.as_deref(), Some("ตูน"));
+        assert_eq!(r.contact_type, Some(ContactType::Prospect));
+
+        // Update: change task, clear due date, unassign contact.
+        let mut t = r.todo.clone();
+        t.task = "โทรนัดดูสินค้า".into();
+        t.due_date = None;
+        t.contact_id = None;
+        update_todo(&conn, &t).unwrap();
+        let rows = list_todos(&conn, "").unwrap();
+        assert_eq!(rows[0].todo.task, "โทรนัดดูสินค้า");
+        assert_eq!(rows[0].todo.due_date, None);
+        assert_eq!(rows[0].contact_name, None);
+        assert_eq!(rows[0].contact_type, None);
+
+        delete_todo(&conn, id).unwrap();
+        assert!(list_todos(&conn, "").unwrap().is_empty());
+    }
+
+    #[test]
+    fn todo_list_orders_pending_then_due_date() {
+        let conn = mem();
+        let done_id = add_todo(&conn, None, "done task", Some(d("2026-01-01"))).unwrap();
+        set_todo_done(&conn, done_id, true).unwrap();
+        add_todo(&conn, None, "no due", None).unwrap();
+        add_todo(&conn, None, "later", Some(d("2026-12-31"))).unwrap();
+        add_todo(&conn, None, "soon", Some(d("2026-02-01"))).unwrap();
+
+        let tasks: Vec<String> =
+            list_todos(&conn, "").unwrap().into_iter().map(|r| r.todo.task).collect();
+        // Pending first by due date asc (soon, later), then no-due-date, then done last.
+        assert_eq!(tasks, vec!["soon", "later", "no due", "done task"]);
+    }
+
+    #[test]
+    fn todo_done_toggle_persists() {
+        let conn = mem();
+        let id = add_todo(&conn, None, "t", None).unwrap();
+        set_todo_done(&conn, id, true).unwrap();
+        assert!(list_todos(&conn, "").unwrap()[0].todo.done);
+        set_todo_done(&conn, id, false).unwrap();
+        assert!(!list_todos(&conn, "").unwrap()[0].todo.done);
+    }
+
+    #[test]
+    fn todo_contact_set_null_on_delete() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("เอ")).unwrap();
+        add_todo(&conn, Some(cid), "task for เอ", None).unwrap();
+        delete_contact(&conn, cid).unwrap();
+        let rows = list_todos(&conn, "").unwrap();
+        assert_eq!(rows.len(), 1, "todo survives contact deletion");
+        assert_eq!(rows[0].todo.contact_id, None);
+        assert_eq!(rows[0].contact_name, None);
+        assert_eq!(rows[0].contact_type, None);
+    }
+
+    #[test]
+    fn overdue_and_due_soon_counts() {
+        let conn = mem();
+        let today = Local::now().date_naive();
+        let yesterday = today - chrono::Duration::days(1);
+        let in_three = today + chrono::Duration::days(3);
+        let in_ten = today + chrono::Duration::days(10);
+
+        add_todo(&conn, None, "overdue", Some(yesterday)).unwrap();
+        add_todo(&conn, None, "due soon", Some(in_three)).unwrap();
+        add_todo(&conn, None, "far", Some(in_ten)).unwrap();
+        let done_overdue = add_todo(&conn, None, "done overdue", Some(yesterday)).unwrap();
+        set_todo_done(&conn, done_overdue, true).unwrap();
+
+        assert_eq!(count_overdue_todos(&conn).unwrap(), 1); // only unfinished past-due
+        assert_eq!(count_due_soon_todos(&conn, 7).unwrap(), 1); // in_three only (in_ten beyond 7)
     }
 }
