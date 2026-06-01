@@ -39,9 +39,11 @@ form so its controls line up.
   `LABEL_W` label column, then the widget) so every control sits on its own
   vertically-centred row and lines up. Search-card rows: `ค้นหา` (text + ล้าง),
   `สถานะ` (combo), `ของ` (combo). This is what fixes the misalignment.
-- **Fields fill their column width** (`ui.available_width()`), so the cards are
-  responsive and never clip. The earlier fixed `PANEL_W` / `FIELD_W` constants
-  are removed; only `LABEL_W` remains.
+- **Fields are sized from the real column width** (`cols[i].available_width()`
+  minus the label column and frame margins), so each card fills its column
+  *without overflowing it* — measuring availability deeper inside the nested
+  frame/rows over-reports and pushes the card past the screen edge. The earlier
+  fixed `PANEL_W` / `FIELD_W` constants are removed; only `LABEL_W` remains.
 - The result count (`ทั้งหมด N รายการ`) and the table below are unchanged.
 
 ## Non-goals

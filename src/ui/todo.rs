@@ -128,6 +128,12 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
     // --- add/edit form (left) and search/filter (right) as two equal cards ---
     ui.columns(2, |cols| {
+        // Field widths from the real column width (both columns are equal) so each
+        // card fills its column without overflowing it — measuring availability
+        // deeper inside the nested frame/rows over-reports and overflows.
+        let field_w = (cols[0].available_width() - LABEL_W - 40.0).max(60.0);
+        let search_field_w = (field_w - 60.0).max(60.0); // room for the "ล้าง" button
+
         // Left card: add / edit form.
         let c0 = &mut cols[0];
         egui::Frame::group(c0.style())
@@ -143,7 +149,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 ui.add_space(6.0);
 
                 field_row(ui, "สิ่งที่ต้องทำ", |ui| {
-                    let w = ui.available_width();
+                    let w = field_w;
                     ui.add(
                         egui::TextEdit::singleline(&mut f.task)
                             .hint_text("เช่น โทรนัดดูสินค้า Nutrilite")
@@ -151,7 +157,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                     );
                 });
                 field_row(ui, "เกี่ยวกับ", |ui| {
-                    let w = ui.available_width();
+                    let w = field_w;
                     filter_combo(
                         ui,
                         "todo_contact_cb",
@@ -204,8 +210,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 ui.add_space(6.0);
 
                 field_row(ui, "ค้นหา", |ui| {
-                    // Leave room on the right of the field for the clear button.
-                    let w = (ui.available_width() - 52.0).max(80.0);
+                    let w = search_field_w;
                     ui.add(
                         egui::TextEdit::singleline(&mut app.search)
                             .hint_text("งาน / ชื่อ")
@@ -216,7 +221,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                     }
                 });
                 field_row(ui, "สถานะ", |ui| {
-                    let w = ui.available_width();
+                    let w = field_w;
                     egui::ComboBox::from_id_source("todo_status_cb")
                         .width(w)
                         .selected_text(app.todo_status_filter.label())
@@ -227,7 +232,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         });
                 });
                 field_row(ui, "ของ", |ui| {
-                    let w = ui.available_width();
+                    let w = field_w;
                     egui::ComboBox::from_id_source("todo_who_cb")
                         .width(w)
                         .selected_text(app.todo_who_filter.label())
