@@ -168,6 +168,9 @@ impl DbConnection {
     pub fn count_overdue_todos(&self) -> Result<i64> {
         queries::count_overdue_todos(&self.conn)
     }
+    /// Reserved for a planned "due soon" dashboard card (see the query of the
+    /// same name); kept so the card can be wired up without new plumbing.
+    #[allow(dead_code)]
     pub fn count_due_soon_todos(&self, days: i64) -> Result<i64> {
         queries::count_due_soon_todos(&self.conn, days)
     }
