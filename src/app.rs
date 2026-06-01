@@ -73,6 +73,12 @@ pub struct AppState {
     /// Path of the most recently saved image — shown as a clickable link in the
     /// status bar (click → open it with the OS default app).
     pub last_saved_image: Option<String>,
+    /// Todo List add/edit form state.
+    pub todo_form: crate::ui::todo::TodoForm,
+    /// Status filter on the Todo List page.
+    pub todo_status_filter: crate::ui::todo::TodoStatusFilter,
+    /// Contact-type filter on the Todo List page.
+    pub todo_who_filter: crate::ui::todo::TodoWhoFilter,
 }
 
 impl AppState {
@@ -116,6 +122,9 @@ impl AppState {
             awaiting_screenshot: false,
             chart_export_rect: None,
             last_saved_image: None,
+            todo_form: crate::ui::todo::TodoForm::default(),
+            todo_status_filter: crate::ui::todo::TodoStatusFilter::Pending,
+            todo_who_filter: crate::ui::todo::TodoWhoFilter::All,
         })
     }
 
@@ -166,6 +175,7 @@ impl AppState {
             (View::Customers, "💳  ลูกค้า VIP"),
             (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
+            (View::Todos, "📅  สิ่งที่ต้องทำ"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Activities, "📝  ประวัติติดต่อ"),
             (View::ActivityKinds, "📋  ประเภทกิจกรรม"),
@@ -433,6 +443,7 @@ impl eframe::App for AppState {
             View::Customers => ui::customer_list::render(self, ui),
             View::Abos => ui::abo_list::render(self, ui),
             View::FollowUp => ui::followup::render(self, ui),
+            View::Todos => ui::todo::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
             View::Activities => ui::activities::render(self, ui),
             View::ActivityKinds => ui::activity_kinds::render(self, ui),

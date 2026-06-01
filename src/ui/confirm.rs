@@ -11,6 +11,7 @@ use crate::app::AppState;
 pub enum PendingDelete {
     Contact { id: i64, name: String },
     ActivityKind { id: i64, name: String },
+    Todo { id: i64, name: String },
 }
 
 pub fn render(app: &mut AppState, ctx: &egui::Context) {
@@ -36,6 +37,9 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                 "ประเภทนี้จะถูกลบออกจากตัวเลือก".to_string()
             };
             (name.clone(), detail)
+        }
+        PendingDelete::Todo { name, .. } => {
+            (name.clone(), "งานนี้จะถูกลบถาวร".to_string())
         }
     };
 
@@ -75,6 +79,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         let result = match &pending {
             PendingDelete::Contact { id, .. } => app.db.delete_contact(*id),
             PendingDelete::ActivityKind { id, .. } => app.db.delete_activity_kind(*id),
+            PendingDelete::Todo { id, .. } => app.db.delete_todo(*id),
         };
         match result {
             Ok(()) => app.set_status(format!("ลบ \"{name}\" เรียบร้อย")),

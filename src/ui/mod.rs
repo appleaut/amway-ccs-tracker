@@ -15,6 +15,7 @@ pub mod followup;
 pub mod forms;
 pub mod prospect_list;
 pub mod rank_advisor;
+pub mod todo;
 
 /// CCS brand accent (teal, #00BCD4). Used for widget fills / selection tint.
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(0x00, 0xBC, 0xD4);
@@ -68,6 +69,7 @@ pub enum View {
     Customers,
     Abos,
     FollowUp,
+    Todos,
     Network,
     Activities,
     ActivityKinds,
@@ -92,6 +94,30 @@ pub fn metric_card(ui: &mut egui::Ui, title: &str, value: &str, accent: egui::Co
                 );
             });
         });
+}
+
+/// Like [`metric_card`] but the whole card is clickable; returns the click
+/// response so the caller can navigate on click.
+pub fn metric_card_clickable(
+    ui: &mut egui::Ui,
+    title: &str,
+    value: &str,
+    accent: egui::Color32,
+) -> egui::Response {
+    egui::Frame::group(ui.style())
+        .rounding(8.0)
+        .inner_margin(16.0)
+        .show(ui, |ui| {
+            ui.set_min_width(150.0);
+            ui.vertical(|ui| {
+                ui.label(egui::RichText::new(title).size(13.0).weak());
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(value).size(30.0).strong().color(accent));
+            });
+        })
+        .response
+        .interact(egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// A combo box whose popup carries a search field that filters the options —

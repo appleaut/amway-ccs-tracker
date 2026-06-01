@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 6;
+const CURRENT_VERSION: i64 = 7;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -157,6 +157,23 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "ALTER TABLE contacts ADD COLUMN member_no TEXT;
              ALTER TABLE contacts ADD COLUMN abo_no TEXT;",
+        )?;
+    }
+
+    if version < 7 {
+        // Todo List: tasks to do, optionally tied to a contact. Deleting a
+        // contact nulls the link (the task is preserved) rather than cascading.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS todos (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+                task       TEXT    NOT NULL,
+                due_date   TEXT,
+                done       INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_todos_contact ON todos(contact_id);
+            CREATE INDEX IF NOT EXISTS idx_todos_due     ON todos(due_date);",
         )?;
     }
 
