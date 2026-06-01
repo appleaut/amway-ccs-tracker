@@ -343,7 +343,9 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                     contact_id: app.todo_form.contact_id,
                     task: app.todo_form.task.clone(),
                     due_date: app.todo_form.due_date,
-                    done: false, // not changed by update_todo
+                    // `update_todo` writes only contact_id/task/due_date, so
+                    // these two are placeholders it ignores (never persisted).
+                    done: false,
                     created_at: Local::now(),
                 };
                 app.db.update_todo(&t)
