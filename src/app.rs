@@ -54,6 +54,9 @@ pub struct AppState {
     /// Anchor of an in-progress rubber-band selection (screen coords); `None`
     /// when no box is being drawn.
     pub chart_select_start: Option<egui::Pos2>,
+    /// View pan offset for the network chart (screen px). Ctrl + drag and the
+    /// mouse wheel move it freely in any direction; reset by Auto-arrange.
+    pub chart_pan: egui::Vec2,
     /// Row awaiting delete confirmation (a contact or an activity type).
     pub pending_delete: Option<ui::confirm::PendingDelete>,
     /// ABO id currently open in the Rank Advisor modal.
@@ -118,6 +121,7 @@ impl AppState {
             chart_zoom: 1.0,
             selected_nodes: HashSet::new(),
             chart_select_start: None,
+            chart_pan: egui::Vec2::ZERO,
             pending_delete: None,
             rank_advisor: None,
             me_advisor: false,
