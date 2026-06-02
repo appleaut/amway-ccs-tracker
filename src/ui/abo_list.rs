@@ -5,6 +5,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::app::AppState;
 use crate::models::enums::ContactType;
+use crate::models::followup::FollowUpSheet;
 use crate::ui::forms::{self, ContactForm};
 use crate::ui::{ACCENT, ACCENT_STRONG};
 
@@ -49,7 +50,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 .to_lowercase()
                 .cmp(&b.contact.display_name().to_lowercase())
         }),
-        1 => rows.sort_by(|a, b| a.contact.phone.cmp(&b.contact.phone)),
+        1 => rows.sort_by(|a, b| a.followup_done.cmp(&b.followup_done)),
         2 => rows.sort_by(|a, b| {
             let ra = a.contact.rank.map(|r| r.ordinal()).unwrap_or(0);
             let rb = b.contact.rank.map(|r| r.ordinal()).unwrap_or(0);
@@ -73,14 +74,14 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .resizable(false)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .column(Column::remainder().at_least(160.0)) // ชื่อ
-        .column(Column::auto().at_least(120.0)) // เบอร์โทร
+        .column(Column::auto().at_least(130.0)) // % การติดตาม
         .column(Column::auto()) // ระดับ
         .column(Column::remainder().at_least(140.0)) // อัพไลน์
         .column(Column::auto()) // จัดการ
         .header(28.0, |mut header| {
             let cols: [(&str, Option<usize>); 5] = [
                 ("ชื่อ", Some(0)),
-                ("เบอร์โทร", Some(1)),
+                ("% การติดตาม", Some(1)),
                 ("ระดับ", Some(2)),
                 ("อัพไลน์", Some(3)),
                 ("จัดการ", None),
@@ -109,7 +110,12 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         ui.label(row.contact.display_name());
                     });
                     tr.col(|ui| {
-                        ui.label(row.contact.phone.clone().unwrap_or_default());
+                        let frac = row.followup_done as f32 / FollowUpSheet::TOTAL as f32;
+                        ui.add(
+                            egui::ProgressBar::new(frac)
+                                .desired_width(110.0)
+                                .text(format!("{:.0}%", frac * 100.0)),
+                        );
                     });
                     tr.col(|ui| {
                         let rank = row.contact.rank.map(|r| r.as_str()).unwrap_or("—");
