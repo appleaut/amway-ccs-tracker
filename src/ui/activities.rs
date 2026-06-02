@@ -17,11 +17,19 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let kinds = app.db.list_activity_kinds().unwrap_or_default();
 
     ui.horizontal(|ui| {
+        // The text box, button and kind dropdown have different intrinsic heights
+        // and egui lines them up inconsistently in one row. Pick a shared height
+        // (the button height) and build all three to it so they sit centred on the
+        // same line.
+        let ctrl_h =
+            ui.text_style_height(&egui::TextStyle::Button) + 2.0 * ui.spacing().button_padding.y;
         ui.label("🔍");
         ui.add(
             egui::TextEdit::singleline(&mut app.search)
                 .hint_text("ค้นหา ชื่อ / รายละเอียด")
-                .desired_width(240.0),
+                .desired_width(240.0)
+                .min_size(egui::vec2(0.0, ctrl_h))
+                .vertical_align(egui::Align::Center),
         );
         if ui.button("ล้าง").clicked() {
             app.search.clear();
@@ -32,18 +40,35 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             .history_kind
             .clone()
             .unwrap_or_else(|| "ทั้งหมด".to_string());
-        egui::ComboBox::from_id_source("history_kind_cb")
-            .selected_text(selected)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut app.history_kind, None, "ทั้งหมด");
-                for k in &kinds {
-                    ui.selectable_value(
-                        &mut app.history_kind,
-                        Some(k.name.clone()),
-                        k.name.as_str(),
-                    );
+        // egui::ComboBox draws through an internal frame that lands a few px below
+        // the row's other controls here; combo_button allocates like the button, so
+        // it centres on the line. Pair it with a popup kind picker.
+        let popup_id = ui.make_persistent_id("history_kind_popup");
+        let button = crate::ui::combo_button(ui, &selected, 200.0, ctrl_h);
+        if button.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+        }
+        egui::popup::popup_below_widget(
+            ui,
+            popup_id,
+            &button,
+            egui::popup::PopupCloseBehavior::CloseOnClick,
+            |ui| {
+                ui.set_min_width(200.0);
+                if ui
+                    .selectable_label(app.history_kind.is_none(), "ทั้งหมด")
+                    .clicked()
+                {
+                    app.history_kind = None;
                 }
-            });
+                for k in &kinds {
+                    let is_sel = app.history_kind.as_deref() == Some(k.name.as_str());
+                    if ui.selectable_label(is_sel, k.name.as_str()).clicked() {
+                        app.history_kind = Some(k.name.clone());
+                    }
+                }
+            },
+        );
     });
 
     ui.add_space(8.0);

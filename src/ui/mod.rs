@@ -150,7 +150,8 @@ pub fn filter_combo(
     // egui's `ComboBox` closes its popup on *any* click (CloseOnClick), so a
     // search field inside it is unusable. Build the popup by hand with
     // CloseOnClickOutside and close it ourselves once a choice is made.
-    let button = combo_button(ui, &selected_text, width);
+    let combo_h = ui.spacing().interact_size.y.max(22.0);
+    let button = combo_button(ui, &selected_text, width, combo_h);
     if button.clicked() {
         filter.clear();
         ui.memory_mut(|mem| mem.toggle_popup(popup_id));
@@ -208,9 +209,11 @@ pub fn filter_combo(
 }
 
 /// Draw a combo-box-style control (framed, left-aligned text, right ▼ arrow)
-/// sized to `width`, returning its click response.
-fn combo_button(ui: &mut egui::Ui, text: &str, width: f32) -> egui::Response {
-    let height = ui.spacing().interact_size.y.max(22.0);
+/// sized to `width` × `height`, returning its click response. It allocates via
+/// `allocate_exact_size`, so it vertically centres in a row exactly like a
+/// `Button` — unlike `egui::ComboBox`, which can sit a few px off the line when
+/// mixed with text boxes / buttons in one row.
+pub(crate) fn combo_button(ui: &mut egui::Ui, text: &str, width: f32, height: f32) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::click());
     let visuals = ui.style().interact(&resp);
     let painter = ui.painter().with_clip_rect(rect);
