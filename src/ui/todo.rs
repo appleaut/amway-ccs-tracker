@@ -12,11 +12,9 @@ use crate::models::todo::Todo;
 use crate::ui::confirm::PendingDelete;
 use crate::ui::{filter_combo, ACCENT, ACCENT_STRONG};
 
-/// Form-row label column width (px) and the field width that follows it.
+/// Width of the fixed label column in each form/filter row; the field after it
+/// fills the rest of its card's column.
 const LABEL_W: f32 = 110.0;
-const FIELD_W: f32 = 300.0;
-/// Max width of the add/edit form group, so fields don't stretch the window.
-const FORM_W: f32 = 460.0;
 
 /// One labelled form row: a fixed-width label cell, then the field widget. Laid
 /// out manually (not via `egui::Grid`) so combo/date widgets don't under-report
@@ -128,106 +126,136 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut cancel_edit = false;
     let editing = app.todo_form.editing_id.is_some();
 
-    // --- add / edit form: a titled group with aligned label/field rows ---
-    egui::Frame::group(ui.style())
-        .rounding(8.0)
-        .inner_margin(12.0)
-        .show(ui, |ui| {
-            ui.set_max_width(FORM_W);
-            let f = &mut app.todo_form;
+    // --- add/edit form (left) and search/filter (right) as two equal cards ---
+    ui.columns(2, |cols| {
+        // Field widths from the real column width (both columns are equal) so each
+        // card fills its column without overflowing it — measuring availability
+        // deeper inside the nested frame/rows over-reports and overflows.
+        let field_w = (cols[0].available_width() - LABEL_W - 40.0).max(60.0);
+        let search_field_w = (field_w - 60.0).max(60.0); // room for the "ล้าง" button
 
-            ui.label(
-                egui::RichText::new(if editing { "✏ แก้ไขงาน" } else { "➕ เพิ่มงานใหม่" })
-                    .color(ACCENT_STRONG)
-                    .strong(),
-            );
-            ui.add_space(6.0);
-
-            field_row(ui, "สิ่งที่ต้องทำ", |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut f.task)
-                        .hint_text("เช่น โทรนัดดูสินค้า Nutrilite")
-                        .desired_width(FIELD_W),
+        // Left card: add / edit form.
+        let c0 = &mut cols[0];
+        egui::Frame::group(c0.style())
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .show(c0, |ui| {
+                let f = &mut app.todo_form;
+                ui.label(
+                    egui::RichText::new(if editing { "✏ แก้ไขงาน" } else { "➕ เพิ่มงานใหม่" })
+                        .color(ACCENT_STRONG)
+                        .strong(),
                 );
-            });
-            field_row(ui, "เกี่ยวกับ", |ui| {
-                filter_combo(
-                    ui,
-                    "todo_contact_cb",
-                    &mut f.contact_id,
-                    &mut f.contact_filter,
-                    Some("— ไม่ระบุ —"),
-                    &contact_options,
-                    FIELD_W,
-                );
-            });
-            field_row(ui, "กำหนดส่ง", |ui| {
-                let mut has_due = f.due_date.is_some();
-                ui.checkbox(&mut has_due, "มีกำหนดส่ง");
-                if has_due {
-                    let mut due = f.due_date.unwrap_or_else(|| Local::now().date_naive());
-                    ui.add(DatePickerButton::new(&mut due).id_source("todo_due_picker"));
-                    f.due_date = Some(due);
-                } else {
-                    f.due_date = None;
-                    ui.weak("ไม่มีกำหนด");
-                }
-            });
+                ui.add_space(6.0);
 
-            ui.add_space(8.0);
-            field_row(ui, "", |ui| {
-                if editing {
-                    if ui.add(egui::Button::new("💾 บันทึก").fill(ACCENT)).clicked() {
+                field_row(ui, "สิ่งที่ต้องทำ", |ui| {
+                    let w = field_w;
+                    ui.add(
+                        egui::TextEdit::singleline(&mut f.task)
+                            .hint_text("เช่น โทรนัดดูสินค้า Nutrilite")
+                            .desired_width(w),
+                    );
+                });
+                field_row(ui, "เกี่ยวกับ", |ui| {
+                    let w = field_w;
+                    filter_combo(
+                        ui,
+                        "todo_contact_cb",
+                        &mut f.contact_id,
+                        &mut f.contact_filter,
+                        Some("— ไม่ระบุ —"),
+                        &contact_options,
+                        w,
+                    );
+                });
+                field_row(ui, "กำหนดส่ง", |ui| {
+                    let mut has_due = f.due_date.is_some();
+                    ui.checkbox(&mut has_due, "มีกำหนดส่ง");
+                    if has_due {
+                        let mut due = f.due_date.unwrap_or_else(|| Local::now().date_naive());
+                        ui.add(DatePickerButton::new(&mut due).id_source("todo_due_picker"));
+                        f.due_date = Some(due);
+                    } else {
+                        f.due_date = None;
+                        ui.weak("ไม่มีกำหนด");
+                    }
+                });
+
+                ui.add_space(8.0);
+                field_row(ui, "", |ui| {
+                    if editing {
+                        if ui.add(egui::Button::new("💾 บันทึก").fill(ACCENT)).clicked() {
+                            submit = true;
+                        }
+                        if ui.button("ยกเลิก").clicked() {
+                            cancel_edit = true;
+                        }
+                    } else if ui.add(egui::Button::new("➕ เพิ่ม").fill(ACCENT)).clicked() {
                         submit = true;
                     }
-                    if ui.button("ยกเลิก").clicked() {
-                        cancel_edit = true;
+                });
+            });
+
+        // Right card: search + filters — same aligned label/field rows as the form.
+        let c1 = &mut cols[1];
+        egui::Frame::group(c1.style())
+            .rounding(8.0)
+            .inner_margin(12.0)
+            .show(c1, |ui| {
+                ui.label(
+                    egui::RichText::new("🔍 ค้นหา / กรอง")
+                        .color(ACCENT_STRONG)
+                        .strong(),
+                );
+                ui.add_space(6.0);
+
+                field_row(ui, "ค้นหา", |ui| {
+                    let w = search_field_w;
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.search)
+                            .hint_text("งาน / ชื่อ")
+                            .desired_width(w),
+                    );
+                    if ui.button("ล้าง").clicked() {
+                        app.search.clear();
                     }
-                } else if ui.add(egui::Button::new("➕ เพิ่ม").fill(ACCENT)).clicked() {
-                    submit = true;
-                }
-            });
-        });
-
-    ui.add_space(8.0);
-
-    // --- filter row ---
-    ui.horizontal(|ui| {
-        ui.label("🔍");
-        ui.add(
-            egui::TextEdit::singleline(&mut app.search)
-                .hint_text("ค้นหา งาน / ชื่อ")
-                .desired_width(200.0),
-        );
-        if ui.button("ล้าง").clicked() {
-            app.search.clear();
-        }
-        ui.separator();
-        ui.label("สถานะ:");
-        egui::ComboBox::from_id_source("todo_status_cb")
-            .selected_text(app.todo_status_filter.label())
-            .show_ui(ui, |ui| {
-                for s in TodoStatusFilter::ALL {
-                    ui.selectable_value(&mut app.todo_status_filter, s, s.label());
-                }
-            });
-        ui.label("ของ:");
-        egui::ComboBox::from_id_source("todo_who_cb")
-            .selected_text(app.todo_who_filter.label())
-            .show_ui(ui, |ui| {
-                ui.selectable_value(
-                    &mut app.todo_who_filter,
-                    TodoWhoFilter::All,
-                    TodoWhoFilter::All.label(),
-                );
-                for t in ContactType::ALL {
-                    ui.selectable_value(&mut app.todo_who_filter, TodoWhoFilter::Type(t), t.label_th());
-                }
-                ui.selectable_value(
-                    &mut app.todo_who_filter,
-                    TodoWhoFilter::Unassigned,
-                    TodoWhoFilter::Unassigned.label(),
-                );
+                });
+                field_row(ui, "สถานะ", |ui| {
+                    let w = field_w;
+                    egui::ComboBox::from_id_source("todo_status_cb")
+                        .width(w)
+                        .selected_text(app.todo_status_filter.label())
+                        .show_ui(ui, |ui| {
+                            for s in TodoStatusFilter::ALL {
+                                ui.selectable_value(&mut app.todo_status_filter, s, s.label());
+                            }
+                        });
+                });
+                field_row(ui, "ของ", |ui| {
+                    let w = field_w;
+                    egui::ComboBox::from_id_source("todo_who_cb")
+                        .width(w)
+                        .selected_text(app.todo_who_filter.label())
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut app.todo_who_filter,
+                                TodoWhoFilter::All,
+                                TodoWhoFilter::All.label(),
+                            );
+                            for t in ContactType::ALL {
+                                ui.selectable_value(
+                                    &mut app.todo_who_filter,
+                                    TodoWhoFilter::Type(t),
+                                    t.label_th(),
+                                );
+                            }
+                            ui.selectable_value(
+                                &mut app.todo_who_filter,
+                                TodoWhoFilter::Unassigned,
+                                TodoWhoFilter::Unassigned.label(),
+                            );
+                        });
+                });
             });
     });
 
