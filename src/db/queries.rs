@@ -979,18 +979,30 @@ pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<Customer
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-/// An ABO plus the resolved name of its upline (sponsor), if any.
+/// An ABO plus the resolved name of its upline (sponsor), if any, and the number
+/// of completed follow-up items (0..=26) — feeds the "% การติดตาม" column.
 pub struct AboRow {
     pub contact: Contact,
     pub upline_name: Option<String>,
+    pub followup_done: i64,
 }
 
 pub fn list_abo_rows(conn: &Connection, query: &str) -> Result<Vec<AboRow>> {
     let like = format!("%{query}%");
+    // Sum the 26 follow-up booleans (NULL → 0 when the ABO has no sheet yet).
     let sql = format!(
-        "SELECT {C}, up.name
+        "SELECT {C}, up.name,
+                COALESCE(fs.bk1_jumpstart1 + fs.bk1_core_plan + fs.bk1_why_amway
+                       + fs.bk1_why_nutrilite + fs.bk1_closed + fs.bk1_jumpstart2
+                       + fs.bk1_why_artistry + fs.bk1_smart_home_tech + fs.bk1_aec_health
+                       + fs.bk2_jumpstart3 + fs.bk2_space_to_grow + fs.bk2_100_dreams
+                       + fs.bk2_5f1f + fs.bk2_name_list + fs.bk2_study_table + fs.bk2_analysis
+                       + fs.c1_link3 + fs.c1_weekly_meeting + fs.c1_ccs_seminar
+                       + fs.c1_auto_renewal + fs.c1_sop + fs.c1_1abo + fs.c1_5000pv
+                       + fs.conf_crack_code + fs.conf_5stars + fs.conf_spirit, 0)
          FROM contacts c
          LEFT JOIN contacts up ON up.id = c.sponsor_id
+         LEFT JOIN follow_up_sheets fs ON fs.contact_id = c.id
          WHERE c.contact_type = 'ABO'
            AND (c.name LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1 OR IFNULL(c.phone,'') LIKE ?1)
          ORDER BY c.name ASC"
@@ -999,9 +1011,11 @@ pub fn list_abo_rows(conn: &Connection, query: &str) -> Result<Vec<AboRow>> {
     let rows = stmt.query_map([like], |row| {
         let contact = row_to_contact(row)?;
         let upline_name: Option<String> = row.get(17)?;
+        let followup_done: i64 = row.get(18)?;
         Ok(AboRow {
             contact,
             upline_name,
+            followup_done,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -1142,6 +1156,22 @@ mod tests {
         // Search narrows the list.
         let filtered = list_abo_rows(&conn, "วีระ").unwrap();
         assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn abo_rows_include_followup_done() {
+        let conn = mem();
+        let id = insert_contact(&conn, &sample_abo("Up", Rank::Cl)).unwrap();
+        // No follow-up sheet yet → 0.
+        assert_eq!(list_abo_rows(&conn, "").unwrap()[0].followup_done, 0);
+
+        // Tick three items and save → the count is 3.
+        let mut sheet = get_follow_up(&conn, id).unwrap();
+        sheet.bk1_why_amway = true;
+        sheet.c1_sop = true;
+        sheet.conf_spirit = true;
+        save_follow_up(&conn, &sheet).unwrap();
+        assert_eq!(list_abo_rows(&conn, "").unwrap()[0].followup_done, 3);
     }
 
     #[test]
