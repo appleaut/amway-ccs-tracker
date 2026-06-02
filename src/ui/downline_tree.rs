@@ -58,6 +58,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             app.node_offsets.clear();
             app.selected_nodes.clear();
             app.chart_zoom = 1.0;
+            app.chart_pan = egui::Vec2::ZERO;
         }
         if ui
             .add(egui::Button::new("📊 ประเมินระดับของฉัน").fill(ACCENT))
@@ -85,7 +86,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     });
     ui.label(
         egui::RichText::new(
-            "ลาก node เพื่อย้าย • ลากพื้นที่ว่างเพื่อเลือกหลาย node (Shift = เลือกเพิ่ม) แล้วลากย้ายพร้อมกัน • คลิกพื้นที่ว่างเพื่อยกเลิกการเลือก",
+            "ลาก node เพื่อย้าย • ลากพื้นที่ว่างเพื่อเลือกหลาย node (Shift = เลือกเพิ่ม) แล้วลากย้ายพร้อมกัน • Ctrl + ลาก = เลื่อนมุมมอง (pan) • คลิกพื้นที่ว่างเพื่อยกเลิกการเลือก",
         )
         .weak()
         .small(),
@@ -171,9 +172,8 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let zoom = app.chart_zoom;
     let node_r = base_node_r * zoom;
 
-    // Size the canvas to the layout's actual bounding box (so a tree that leans
-    // to one side doesn't force needless scroll), and centre the chart within
-    // it. Small networks end up smaller than the viewport → no scrollbars.
+    // Bounding box of the auto-layout, whose centre we line up with the viewport
+    // centre so the chart starts centred (the user then pans/zooms from there).
     let mut min = egui::vec2(f32::MAX, f32::MAX);
     let mut max = egui::vec2(f32::MIN, f32::MIN);
     for p in &base_pos {
@@ -183,137 +183,167 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         max.y = max.y.max(p.y);
     }
     let layout_center = (min + max) * 0.5;
-    let margin = node_r + 60.0;
-    let avail = ui.available_size();
-    let side_w = ((max.x - min.x) * zoom + 2.0 * margin).max(avail.x);
-    let side_h = ((max.y - min.y) * zoom + 2.0 * margin).max(avail.y);
 
     let offsets = &mut app.node_offsets;
     let selected = &mut app.selected_nodes;
     let select_start = &mut app.chart_select_start;
+    let pan = &mut app.chart_pan;
 
-    let out = egui::ScrollArea::both()
-        .drag_to_scroll(false)
-        .show(ui, |ui| {
-            // The whole canvas senses click+drag: a drag starting on empty space
-            // draws a rubber-band selection box, and a plain click clears the
-            // selection. Per-node drag senses are added on top afterwards, so a
-            // press that lands on a node goes to the node, not the canvas.
-            let (resp, painter) = ui
-                .allocate_painter(egui::vec2(side_w, side_h), egui::Sense::click_and_drag());
-            let center = resp.rect.center() - layout_center * zoom;
+    // Infinite-canvas navigation: the chart fills the available area and is moved
+    // by panning (Ctrl + drag, or the mouse wheel) and zooming — so the view can
+    // travel freely in every direction, not only where content overflows a scroll
+    // box (which let it pan vertically but not horizontally). `*pan` is the
+    // accumulated view offset, added to every node's position.
+    //
+    // The whole canvas senses click+drag: a drag starting on empty space draws a
+    // rubber-band selection box, and a plain click clears the selection. Per-node
+    // drag senses are added on top afterwards, so a press that lands on a node
+    // goes to the node, not the canvas.
+    let (resp, painter) =
+        ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
+    let center = resp.rect.center() - layout_center * zoom + *pan;
 
-            // Stable key per node (contact id, or ME_KEY for the centre) and the
-            // screen position of its auto-layout slot, before the drag offset.
-            // Offsets are applied in a later pass so a group move can shift the
-            // whole selection at once without lagging a frame behind.
-            let keys: Vec<i64> = nodes
-                .iter()
-                .map(|n| match n.contact {
-                    Some(ci) => abos[ci].id,
-                    None => ME_KEY,
-                })
-                .collect();
-            let base_screen: Vec<egui::Pos2> =
-                base_pos.iter().map(|p| center + *p * zoom).collect();
+    // Stable key per node (contact id, or ME_KEY for the centre) and the screen
+    // position of its auto-layout slot, before the drag offset. Offsets are
+    // applied in a later pass so a group move can shift the whole selection at
+    // once without lagging a frame behind.
+    let keys: Vec<i64> = nodes
+        .iter()
+        .map(|n| match n.contact {
+            Some(ci) => abos[ci].id,
+            None => ME_KEY,
+        })
+        .collect();
+    let base_screen: Vec<egui::Pos2> = base_pos.iter().map(|p| center + *p * zoom).collect();
 
-            // Per-node drag interaction. Record at most one dragged node; its
-            // delta is applied to the offsets below.
-            let mut drag: Option<(usize, egui::Vec2)> = None;
-            for i in 0..nodes.len() {
-                let off = offsets.get(&keys[i]).copied().unwrap_or(egui::Vec2::ZERO);
-                let pos = base_screen[i] + off;
-                let rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(node_r * 2.0));
-                let node_resp =
-                    ui.interact(rect, egui::Id::new(("dln_node", keys[i])), egui::Sense::drag());
-                if node_resp.dragged() {
-                    drag = Some((i, node_resp.drag_delta()));
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                } else if node_resp.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-                }
-            }
-            if let Some((i, d)) = drag {
-                if selected.contains(&keys[i]) {
-                    // Dragging a selected node moves the whole selection.
-                    for k in selected.iter() {
-                        *offsets.entry(*k).or_insert(egui::Vec2::ZERO) += d;
-                    }
-                } else {
-                    // Dragging an unselected node moves just it, and makes it the
-                    // sole selection.
-                    *offsets.entry(keys[i]).or_insert(egui::Vec2::ZERO) += d;
-                    selected.clear();
-                    selected.insert(keys[i]);
-                }
-            }
+    // Holding Ctrl turns any drag — on a node or on empty canvas — into a pan of
+    // the whole view, instead of moving a node or drawing a rubber-band box.
+    let ctrl = ui.input(|i| i.modifiers.ctrl);
 
-            // Rubber-band selection on the empty canvas.
-            if resp.drag_started() {
-                *select_start = resp.interact_pointer_pos();
-                // Shift extends the current selection; otherwise start fresh.
-                if !ui.input(|i| i.modifiers.shift) {
-                    selected.clear();
+    // The mouse wheel pans too (vertical, or horizontal with Shift), keeping the
+    // chart navigable without dragging now that there is no scrollbar.
+    if resp.hovered() {
+        *pan += ui.input(|i| i.smooth_scroll_delta);
+    }
+
+    // Per-node drag interaction. Record at most one dragged node; its delta is
+    // applied below (moves the node, or pans the view if Ctrl).
+    let mut drag: Option<(usize, egui::Vec2)> = None;
+    for i in 0..nodes.len() {
+        let off = offsets.get(&keys[i]).copied().unwrap_or(egui::Vec2::ZERO);
+        let pos = base_screen[i] + off;
+        let rect = egui::Rect::from_center_size(pos, egui::Vec2::splat(node_r * 2.0));
+        let node_resp =
+            ui.interact(rect, egui::Id::new(("dln_node", keys[i])), egui::Sense::drag());
+        if node_resp.dragged() {
+            drag = Some((i, node_resp.drag_delta()));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if node_resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+    }
+
+    // Rubber-band rectangle to draw this frame (only while selecting; never
+    // during a Ctrl-pan).
+    let mut band: Option<egui::Rect> = None;
+
+    if ctrl {
+        // Pan: feed whichever drag is active — a press that landed on a node, or
+        // one on empty canvas — into the view offset. Nodes don't move and the
+        // selection is left untouched.
+        let delta = drag
+            .map(|(_, d)| d)
+            .or_else(|| resp.dragged().then(|| resp.drag_delta()));
+        if let Some(d) = delta {
+            *pan += d;
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        }
+        *select_start = None;
+    } else {
+        // Apply a node drag: move the node, or the whole selection.
+        if let Some((i, d)) = drag {
+            if selected.contains(&keys[i]) {
+                // Dragging a selected node moves the whole selection.
+                for k in selected.iter() {
+                    *offsets.entry(*k).or_insert(egui::Vec2::ZERO) += d;
                 }
+            } else {
+                // Dragging an unselected node moves just it, and makes it the
+                // sole selection.
+                *offsets.entry(keys[i]).or_insert(egui::Vec2::ZERO) += d;
+                selected.clear();
+                selected.insert(keys[i]);
             }
-            let band = match (*select_start, resp.interact_pointer_pos()) {
-                (Some(start), Some(curr)) if resp.dragged() || resp.drag_stopped() => {
-                    Some(egui::Rect::from_two_pos(start, curr))
-                }
-                _ => None,
-            };
-            if resp.drag_stopped() {
-                if let Some(rect) = band {
-                    for i in 0..nodes.len() {
-                        let off = offsets.get(&keys[i]).copied().unwrap_or(egui::Vec2::ZERO);
-                        if rect.contains(base_screen[i] + off) {
-                            selected.insert(keys[i]);
-                        }
-                    }
-                }
-                *select_start = None;
-            }
-            // A plain click on empty canvas clears the selection.
-            if resp.clicked() {
+        }
+
+        // Rubber-band selection on the empty canvas.
+        if resp.drag_started() {
+            *select_start = resp.interact_pointer_pos();
+            // Shift extends the current selection; otherwise start fresh.
+            if !ui.input(|i| i.modifiers.shift) {
                 selected.clear();
             }
-
-            // Final positions (offsets now include any drag from this frame).
-            for i in 0..nodes.len() {
-                let off = offsets.get(&keys[i]).copied().unwrap_or(egui::Vec2::ZERO);
-                nodes[i].pos = base_screen[i] + off;
+        }
+        band = match (*select_start, resp.interact_pointer_pos()) {
+            (Some(start), Some(curr)) if resp.dragged() || resp.drag_stopped() => {
+                Some(egui::Rect::from_two_pos(start, curr))
             }
-
-            // Edges first (so nodes draw on top).
-            let edge = egui::Stroke::new(1.5 * zoom, egui::Color32::from_gray(170));
-            for n in &nodes {
-                for &child in &n.children {
-                    painter.line_segment([n.pos, nodes[child].pos], edge);
-                }
-            }
-
-            // Nodes, with an amber ring on the selected ones.
-            let ring_w = 3.0 * (node_r / 30.0).max(0.4);
-            for i in 0..nodes.len() {
-                draw_node(&painter, &nodes[i], &abos, node_r, &me_inside);
-                if selected.contains(&keys[i]) {
-                    painter.circle_stroke(
-                        nodes[i].pos,
-                        node_r + 4.0,
-                        egui::Stroke::new(ring_w, SELECT_RING),
-                    );
-                }
-            }
-
-            // The rubber-band rectangle on top while dragging.
+            _ => None,
+        };
+        if resp.drag_stopped() {
             if let Some(rect) = band {
-                painter.rect_filled(rect, 0.0, SELECT_RING.gamma_multiply(0.15));
-                painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, SELECT_RING));
+                for i in 0..nodes.len() {
+                    let off = offsets.get(&keys[i]).copied().unwrap_or(egui::Vec2::ZERO);
+                    if rect.contains(base_screen[i] + off) {
+                        selected.insert(keys[i]);
+                    }
+                }
             }
-        });
+            *select_start = None;
+        }
+        // A plain click on empty canvas clears the selection.
+        if resp.clicked() {
+            selected.clear();
+        }
+    }
+
+    // Final positions (offsets now include any drag from this frame).
+    for i in 0..nodes.len() {
+        let off = offsets.get(&keys[i]).copied().unwrap_or(egui::Vec2::ZERO);
+        nodes[i].pos = base_screen[i] + off;
+    }
+
+    // Edges first (so nodes draw on top).
+    let edge = egui::Stroke::new(1.5 * zoom, egui::Color32::from_gray(170));
+    for n in &nodes {
+        for &child in &n.children {
+            painter.line_segment([n.pos, nodes[child].pos], edge);
+        }
+    }
+
+    // Nodes, with an amber ring on the selected ones.
+    let ring_w = 3.0 * (node_r / 30.0).max(0.4);
+    for i in 0..nodes.len() {
+        draw_node(&painter, &nodes[i], &abos, node_r, &me_inside);
+        if selected.contains(&keys[i]) {
+            painter.circle_stroke(
+                nodes[i].pos,
+                node_r + 4.0,
+                egui::Stroke::new(ring_w, SELECT_RING),
+            );
+        }
+    }
+
+    // The rubber-band rectangle on top while dragging.
+    if let Some(rect) = band {
+        painter.rect_filled(rect, 0.0, SELECT_RING.gamma_multiply(0.15));
+        painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, SELECT_RING));
+    }
 
     // Remember the chart's on-screen viewport so the export can crop to it.
-    app.chart_export_rect = Some(out.inner_rect);
+    app.chart_export_rect = Some(resp.rect);
 }
 
 /// Recursively create nodes for `contact_idx` and its downline. Returns the new
