@@ -122,39 +122,64 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut leaves = vec![0usize; nodes.len()];
     compute_leaves(&nodes, 0, &mut leaves);
 
-    let zoom = app.chart_zoom;
-    let base_node_r = 30.0_f32;
+    // Angular layout: give every subtree a sector proportional to its leaf
+    // count. Angles don't depend on scale, so we fix them once up front.
+    let mut angles = vec![0.0f32; nodes.len()];
+    assign_angles(&nodes, 0, 0.0, TAU, &leaves, &mut angles);
 
-    // Choose ring spacing from the layout's own geometry: lay nodes out at unit
-    // spacing, find the closest pair, then scale so even that pair clears
-    // 2*node_r + gap. Because every position scales linearly with `ring`, this
-    // yields the most compact layout that still avoids overlap — small networks
-    // stay tight and fit one screen; dense ones grow (and gain scrollbars).
-    assign_pos(&mut nodes, 0, 0.0, TAU, 1.0, egui::Pos2::ZERO, &leaves);
-    let dmin = min_pair_dist(&nodes);
-    let base_ring = ((2.0 * base_node_r + 40.0) / dmin).clamp(90.0, 800.0);
+    let base_node_r = 30.0_f32;
+    // Minimum centre-to-centre distance two nodes may sit at before their circles
+    // touch (node diameter + a small gap).
+    let clearance = 2.0 * base_node_r + 40.0;
+
+    // Per-depth ring radii. Each ring sits just far enough out to (a) clear the
+    // ring inside it and (b) separate the closest two nodes that share it. Sizing
+    // rings independently keeps sparse / deep branches tight, instead of letting
+    // one crowded ring inflate the whole chart — which a single global scale did,
+    // spreading every node apart just to satisfy the worst-crammed pair.
+    let max_depth = nodes.iter().map(|n| n.depth).max().unwrap_or(0);
+    let mut radii = vec![0.0f32; max_depth + 1];
+    for d in 1..=max_depth {
+        let sep = min_angle_sep_at_depth(&nodes, &angles, d);
+        let r_ang = if sep.is_finite() {
+            // chord = 2 r sin(Δ/2) ≥ clearance  ⇒  r ≥ clearance / (2 sin(Δ/2))
+            clearance / (2.0 * (sep * 0.5).sin()).max(1e-3)
+        } else {
+            0.0 // a lone node on this ring needs no angular spreading
+        };
+        // The 4000px ceiling is just a safety net for pathological trees; real
+        // networks stay far below it.
+        radii[d] = (radii[d - 1] + clearance).max(r_ang).min(4000.0);
+    }
+
+    // Base (zoom = 1) position of every node from its angle and ring radius.
+    let base_pos: Vec<egui::Vec2> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| egui::Vec2::angled(angles[i]) * radii[n.depth])
+        .collect();
 
     // Apply the user's zoom uniformly to node size and ring spacing; everything
     // downstream (canvas size, node positions, fonts) derives from these.
+    let zoom = app.chart_zoom;
     let node_r = base_node_r * zoom;
-    let ring = base_ring * zoom;
 
     // Size the canvas to the layout's actual bounding box (so a tree that leans
     // to one side doesn't force needless scroll), and centre the chart within
     // it. Small networks end up smaller than the viewport → no scrollbars.
-    let mut min = egui::pos2(f32::MAX, f32::MAX);
-    let mut max = egui::pos2(f32::MIN, f32::MIN);
-    for n in &nodes {
-        min.x = min.x.min(n.pos.x);
-        min.y = min.y.min(n.pos.y);
-        max.x = max.x.max(n.pos.x);
-        max.y = max.y.max(n.pos.y);
+    let mut min = egui::vec2(f32::MAX, f32::MAX);
+    let mut max = egui::vec2(f32::MIN, f32::MIN);
+    for p in &base_pos {
+        min.x = min.x.min(p.x);
+        min.y = min.y.min(p.y);
+        max.x = max.x.max(p.x);
+        max.y = max.y.max(p.y);
     }
-    let unit_center = egui::vec2((min.x + max.x) * 0.5, (min.y + max.y) * 0.5);
+    let layout_center = (min + max) * 0.5;
     let margin = node_r + 60.0;
     let avail = ui.available_size();
-    let side_w = ((max.x - min.x) * ring + 2.0 * margin).max(avail.x);
-    let side_h = ((max.y - min.y) * ring + 2.0 * margin).max(avail.y);
+    let side_w = ((max.x - min.x) * zoom + 2.0 * margin).max(avail.x);
+    let side_h = ((max.y - min.y) * zoom + 2.0 * margin).max(avail.y);
 
     let offsets = &mut app.node_offsets;
 
@@ -163,17 +188,15 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let (resp, painter) =
                 ui.allocate_painter(egui::vec2(side_w, side_h), egui::Sense::hover());
-            let center = resp.rect.center() - unit_center * ring;
-
-            assign_pos(&mut nodes, 0, 0.0, TAU, ring, center, &leaves);
+            let center = resp.rect.center() - layout_center * zoom;
 
             // Apply stored offsets and let the user drag each node.
-            for node in &mut nodes {
+            for (i, node) in nodes.iter_mut().enumerate() {
                 let key = match node.contact {
                     Some(ci) => abos[ci].id,
                     None => ME_KEY,
                 };
-                let base = node.pos;
+                let base = center + base_pos[i] * zoom;
                 let off = offsets.get(&key).copied().unwrap_or(egui::Vec2::ZERO);
                 let mut pos = base + off;
 
@@ -241,23 +264,29 @@ fn build_node(
     Some(my_idx)
 }
 
-/// Smallest distance between any two node centres at the current positions.
-/// Used to scale ring spacing so nodes never overlap.
-fn min_pair_dist(nodes: &[Node]) -> f32 {
-    let mut dmin = f32::INFINITY;
-    for i in 0..nodes.len() {
-        for j in (i + 1)..nodes.len() {
-            let d = nodes[i].pos.distance(nodes[j].pos);
-            if d < dmin {
-                dmin = d;
+/// Smallest angular separation (radians) between any two nodes that sit on the
+/// same `depth` ring. Returns `INFINITY` when fewer than two nodes share the
+/// ring (then there is no angular spacing constraint for it).
+fn min_angle_sep_at_depth(nodes: &[Node], angles: &[f32], depth: usize) -> f32 {
+    let at: Vec<f32> = nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| n.depth == depth)
+        .map(|(i, _)| angles[i])
+        .collect();
+    let mut best = f32::INFINITY;
+    for i in 0..at.len() {
+        for j in (i + 1)..at.len() {
+            let mut d = (at[i] - at[j]).abs();
+            if d > TAU - d {
+                d = TAU - d; // take the shorter way around the circle
+            }
+            if d < best {
+                best = d;
             }
         }
     }
-    if dmin.is_finite() && dmin > 1e-3 {
-        dmin
-    } else {
-        1.0
-    }
+    best
 }
 
 /// Post-order leaf count per node (used to size angular sectors).
@@ -276,30 +305,21 @@ fn compute_leaves(nodes: &[Node], idx: usize, leaves: &mut [usize]) -> usize {
     v
 }
 
-/// Place each node at `depth * ring` from centre, giving every subtree an
-/// angular sector proportional to its leaf count.
-fn assign_pos(
-    nodes: &mut [Node],
-    idx: usize,
-    a0: f32,
-    a1: f32,
-    ring: f32,
-    center: egui::Pos2,
-    leaves: &[usize],
-) {
-    let mid = (a0 + a1) * 0.5;
-    let radius = nodes[idx].depth as f32 * ring;
-    nodes[idx].pos = center + egui::Vec2::angled(mid) * radius;
+/// Assign every node the mid-angle of its sector, giving each subtree an angular
+/// span proportional to its leaf count. Radius (which ring) is decided
+/// separately, so this only fixes direction from the centre.
+fn assign_angles(nodes: &[Node], idx: usize, a0: f32, a1: f32, leaves: &[usize], angles: &mut [f32]) {
+    angles[idx] = (a0 + a1) * 0.5;
 
-    let kids = nodes[idx].children.clone();
+    let kids = &nodes[idx].children;
     if kids.is_empty() {
         return;
     }
     let total: usize = kids.iter().map(|&c| leaves[c]).sum::<usize>().max(1);
     let mut a = a0;
-    for ch in kids {
+    for &ch in kids {
         let span = (a1 - a0) * (leaves[ch] as f32 / total as f32);
-        assign_pos(nodes, ch, a, a + span, ring, center, leaves);
+        assign_angles(nodes, ch, a, a + span, leaves, angles);
         a += span;
     }
 }
