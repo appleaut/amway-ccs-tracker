@@ -1,7 +1,7 @@
 //! Application state, the eframe main loop, sidebar navigation, settings, and
 //! one-time setup (fonts, theme, database location).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use chrono::Local;
@@ -47,6 +47,13 @@ pub struct AppState {
     pub node_offsets: HashMap<i64, egui::Vec2>,
     /// Zoom factor for the network chart (1.0 = default; reset by Auto-arrange).
     pub chart_zoom: f32,
+    /// Downline-chart nodes currently selected (keyed like `node_offsets`:
+    /// contact id, or `i64::MIN` for me). Dragging any one of them moves the
+    /// whole set together; a rubber-band drag on empty canvas (re)builds it.
+    pub selected_nodes: HashSet<i64>,
+    /// Anchor of an in-progress rubber-band selection (screen coords); `None`
+    /// when no box is being drawn.
+    pub chart_select_start: Option<egui::Pos2>,
     /// Row awaiting delete confirmation (a contact or an activity type).
     pub pending_delete: Option<ui::confirm::PendingDelete>,
     /// ABO id currently open in the Rank Advisor modal.
@@ -109,6 +116,8 @@ impl AppState {
             abo_sort: ui::SortSpec::new(0, true),       // name, ascending
             node_offsets: HashMap::new(),
             chart_zoom: 1.0,
+            selected_nodes: HashSet::new(),
+            chart_select_start: None,
             pending_delete: None,
             rank_advisor: None,
             me_advisor: false,
