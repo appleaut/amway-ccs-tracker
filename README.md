@@ -48,8 +48,6 @@ cargo test
 * Schema is versioned via `PRAGMA user_version` — see [src/db/schema.rs](src/db/schema.rs).
 * Network-chart images (💾 บันทึกรูป) are written to
   `%APPDATA%\AmwayCCSTracker\exports\network_<timestamp>.png`.
-* The **Settings** screen has a *Load sample data* button that seeds a 3-level
-  ABO hierarchy plus example prospects/customers for a quick tour.
 
 ## Thai font
 

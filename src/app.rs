@@ -8,8 +8,6 @@ use chrono::Local;
 
 use crate::db::DbConnection;
 use crate::error::{AppError, Result};
-use crate::models::contact::{Contact, CustomerScore, ProspectScore};
-use crate::models::enums::{ContactType, NetworkCategory, Rank, SponsorStep};
 use crate::ui::forms::ContactForm;
 use crate::ui::{self, View, ACCENT, ACCENT_STRONG};
 
@@ -293,13 +291,6 @@ impl AppState {
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(8.0);
-        if ui
-            .add(egui::Button::new("📋 ใส่ข้อมูลตัวอย่าง (Load sample data)").fill(ACCENT))
-            .clicked()
-        {
-            self.seed_sample();
-        }
-        ui.add_space(6.0);
         ui.label(
             egui::RichText::new("ข้อมูลถูกบันทึกในเครื่อง (Local SQLite) ไม่มีการเชื่อมต่อเครือข่าย")
                 .small()
@@ -356,95 +347,6 @@ impl AppState {
         } else if !trimmed.is_empty() {
             ui.weak("กรุณากรอกตัวเลข PV (numeric only)");
         }
-    }
-
-    fn seed_sample(&mut self) {
-        match self.do_seed() {
-            Ok(n) => self.set_status(format!("เพิ่มข้อมูลตัวอย่าง {n} รายการ")),
-            Err(e) => self.set_error(e),
-        }
-    }
-
-    /// Insert a small demo dataset: a 3-level ABO hierarchy plus prospects and
-    /// customers with scores. Used by the Settings "Load sample data" button.
-    fn do_seed(&mut self) -> Result<usize> {
-        let mut count = 0;
-
-        let abo = |name: &str, nick: &str, rank: Rank, sponsor: Option<i64>| -> Result<i64> {
-            let mut c = Contact::new_blank();
-            c.name = name.to_string();
-            c.nickname = Some(nick.to_string());
-            c.contact_type = ContactType::Abo;
-            c.rank = Some(rank);
-            c.sponsor_id = sponsor;
-            c.network_category = NetworkCategory::Friend;
-            self.db.insert_contact(&c)
-        };
-
-        let a = abo("พิชัย", "พี่ชัย", Rank::Cl21, None)?;
-        count += 1;
-        let b = abo("สมหญิง", "หญิง", Rank::Cl, Some(a))?;
-        count += 1;
-        let _c = abo("วีระ", "ระ", Rank::C1, Some(b))?; // 3rd level: A -> หญิง -> ระ
-        count += 1;
-        let _d = abo("กานดา", "ดา", Rank::C1, Some(a))?;
-        count += 1;
-
-        // Prospects with scores and flow progress.
-        let p1 = {
-            let mut c = Contact::new_blank();
-            c.name = "ธนวัฒน์".to_string();
-            c.nickname = Some("ตั้ม".to_string());
-            c.phone = Some("0890001111".to_string());
-            c.network_category = NetworkCategory::Coworker;
-            self.db.insert_contact(&c)?
-        };
-        count += 1;
-        let mut s1 = ProspectScore::new(p1);
-        s1.relationship_closeness = 9;
-        s1.financial_stability = 4;
-        s1.leadership = 4;
-        s1.financial_status = 4;
-        s1.accessibility = 5;
-        self.db.upsert_prospect_score(&s1)?;
-        self.db.set_sponsor_step(p1, SponsorStep::Step2)?;
-        self.db.set_sponsor_step(p1, SponsorStep::Step3)?;
-
-        let p2 = {
-            let mut c = Contact::new_blank();
-            c.name = "มาลี".to_string();
-            c.nickname = Some("ลี".to_string());
-            c.phone = Some("0890002222".to_string());
-            c.network_category = NetworkCategory::Relative;
-            self.db.insert_contact(&c)?
-        };
-        count += 1;
-        let mut s2 = ProspectScore::new(p2);
-        s2.relationship_closeness = 6;
-        s2.financial_stability = 3;
-        s2.leadership = 2;
-        s2.financial_status = 3;
-        s2.accessibility = 4;
-        self.db.upsert_prospect_score(&s2)?;
-
-        // Customers with scores.
-        let cu1 = {
-            let mut c = Contact::new_blank();
-            c.name = "อรุณี".to_string();
-            c.nickname = Some("รุณี".to_string());
-            c.phone = Some("0890003333".to_string());
-            c.contact_type = ContactType::Customer;
-            self.db.insert_contact(&c)?
-        };
-        count += 1;
-        let mut cs1 = CustomerScore::new(cu1);
-        cs1.relationship_level = 8;
-        cs1.financial_status = 4;
-        cs1.decision_power = 4;
-        cs1.problems = "ปวดเข่า อยากดูแลสุขภาพ".to_string();
-        self.db.upsert_customer_score(&cs1)?;
-
-        Ok(count)
     }
 }
 
