@@ -1165,14 +1165,14 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let r = app.db.list_advances(&app.search, filter);
     let rows = app.handle(r, Vec::new());
 
-    // Summary: outstanding baht + counts.
-    let out_total: i64 = rows.iter().filter(|r| !r.advance.collected).map(|r| r.advance.amount).sum();
-    let out_count = rows.iter().filter(|r| !r.advance.collected).count();
+    // Outstanding total comes from the DB (ALL outstanding rows, regardless of
+    // the current status filter); rows.len() is what the filter currently shows.
+    let rt = app.db.outstanding_total();
+    let out_total = app.handle(rt, 0);
     ui.label(
         egui::RichText::new(format!(
-            "ยอดรอเก็บรวม: {} บาท • รอเก็บ {} รายการ • แสดง {} รายการ",
+            "ยอดรอเก็บรวมทั้งหมด: {} บาท • แสดง {} รายการ",
             group_thousands(out_total),
-            out_count,
             rows.len()
         ))
         .small()
