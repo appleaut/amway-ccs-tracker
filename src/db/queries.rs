@@ -306,6 +306,11 @@ pub fn set_me_ppv(conn: &Connection, ppv: i64) -> Result<()> {
 // Activity history
 // ---------------------------------------------------------------------------
 
+/// Activity kind logged when a Todo is ticked complete. Seeded into
+/// `activity_kinds` by migration v8 so it appears in the history filter and the
+/// activity-kinds manager; stored as text on each activity row regardless.
+pub const TODO_DONE_KIND: &str = "ทำงานที่ต้องทำเสร็จ";
+
 /// Log an interaction with a contact; returns the new activity id.
 pub fn add_activity(conn: &Connection, contact_id: i64, kind: &str, note: &str) -> Result<i64> {
     conn.execute(
@@ -771,6 +776,17 @@ pub struct TodoRow {
     pub contact_type: Option<ContactType>,
 }
 
+/// Build the activity note for a completed todo: the task text, plus
+/// "— ผล: <result>" when a result was entered. A blank result → task only.
+pub fn done_note(task: &str, result: &str) -> String {
+    let result = result.trim();
+    if result.is_empty() {
+        task.to_string()
+    } else {
+        format!("{task} — ผล: {result}")
+    }
+}
+
 /// Add a task; returns the new id. `task` is trimmed and must be non-empty.
 pub fn add_todo(
     conn: &Connection,
@@ -808,6 +824,34 @@ pub fn update_todo(conn: &Connection, t: &Todo) -> Result<()> {
 /// Set a task's done flag.
 pub fn set_todo_done(conn: &Connection, id: i64, done: bool) -> Result<()> {
     conn.execute("UPDATE todos SET done = ?1 WHERE id = ?2", params![done as i64, id])?;
+    Ok(())
+}
+
+/// Mark a todo done and, when it is tied to a contact, log a `TODO_DONE_KIND`
+/// activity with `done_note(task, result)` as its detail — both in one
+/// transaction. A contactless todo is still marked done, with no activity.
+pub fn complete_todo(conn: &Connection, id: i64, result: &str) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("UPDATE todos SET done = 1 WHERE id = ?1", [id])?;
+    let row: Option<(Option<i64>, String)> = tx
+        .query_row(
+            "SELECT contact_id, task FROM todos WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    if let Some((Some(contact_id), task)) = row {
+        tx.execute(
+            "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                contact_id,
+                TODO_DONE_KIND,
+                done_note(&task, result),
+                Local::now().to_rfc3339()
+            ],
+        )?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -1294,6 +1338,13 @@ mod tests {
     }
 
     #[test]
+    fn migration_seeds_todo_done_kind() {
+        let conn = mem();
+        let kinds = list_activity_kinds(&conn).unwrap();
+        assert!(kinds.iter().any(|k| k.name == TODO_DONE_KIND));
+    }
+
+    #[test]
     fn customer_rows_resolve_upline_name() {
         let conn = mem();
         let up = insert_contact(&conn, &sample_abo("Mentor", Rank::Cl)).unwrap();
@@ -1464,6 +1515,53 @@ mod tests {
         assert_eq!(rows[0].todo.contact_id, None);
         assert_eq!(rows[0].contact_name, None);
         assert_eq!(rows[0].contact_type, None);
+    }
+
+    #[test]
+    fn complete_todo_logs_activity_for_contact() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ธนา")).unwrap();
+        let tid = add_todo(&conn, Some(cid), "โทรนัด", None).unwrap();
+
+        complete_todo(&conn, tid, "ลูกค้าตอบรับ").unwrap();
+
+        let rows = list_todos(&conn, "").unwrap();
+        assert!(rows.iter().find(|r| r.todo.id == tid).unwrap().todo.done);
+
+        let acts = list_activities(&conn, cid).unwrap();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].kind, TODO_DONE_KIND);
+        assert_eq!(acts[0].note, "โทรนัด — ผล: ลูกค้าตอบรับ");
+    }
+
+    #[test]
+    fn complete_todo_without_contact_does_not_log() {
+        let conn = mem();
+        let tid = add_todo(&conn, None, "งานส่วนตัว", None).unwrap();
+
+        complete_todo(&conn, tid, "เสร็จแล้ว").unwrap();
+
+        assert!(list_todos(&conn, "").unwrap()[0].todo.done);
+        assert_eq!(list_all_activities(&conn, "").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn complete_todo_twice_logs_two_activities() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ธนา")).unwrap();
+        let tid = add_todo(&conn, Some(cid), "โทรนัด", None).unwrap();
+
+        complete_todo(&conn, tid, "ครั้งที่หนึ่ง").unwrap();
+        complete_todo(&conn, tid, "ครั้งที่สอง").unwrap();
+
+        assert_eq!(list_activities(&conn, cid).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn done_note_combines_task_and_result() {
+        assert_eq!(done_note("โทรนัด", "ลูกค้าตอบรับ"), "โทรนัด — ผล: ลูกค้าตอบรับ");
+        assert_eq!(done_note("โทรนัด", "   "), "โทรนัด"); // blank result → task only
+        assert_eq!(done_note("โทรนัด", ""), "โทรนัด");
     }
 
     #[test]

@@ -159,6 +159,9 @@ impl DbConnection {
     pub fn set_todo_done(&self, id: i64, done: bool) -> Result<()> {
         queries::set_todo_done(&self.conn, id, done)
     }
+    pub fn complete_todo(&self, id: i64, result: &str) -> Result<()> {
+        queries::complete_todo(&self.conn, id, result)
+    }
     pub fn delete_todo(&self, id: i64) -> Result<()> {
         queries::delete_todo(&self.conn, id)
     }

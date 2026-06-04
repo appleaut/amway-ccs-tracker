@@ -375,8 +375,32 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
 
         // --- apply deferred row actions ---
         if let Some((id, done)) = toggle {
-            if let Err(e) = app.db.set_todo_done(id, done) {
-                app.set_error(e);
+            if !done {
+                // un-tick: back to pending, history untouched
+                if let Err(e) = app.db.set_todo_done(id, false) {
+                    app.set_error(e);
+                }
+            } else if let Some(row) = rows.iter().find(|r| r.todo.id == id) {
+                match (row.todo.contact_id, &row.contact_name) {
+                    (Some(_), Some(name)) => {
+                        // open the result dialog; completion is deferred until "บันทึก"
+                        app.pending_todo_done = Some(crate::ui::todo_done::PendingTodoDone {
+                            id,
+                            task: row.todo.task.clone(),
+                            contact_name: name.clone(),
+                        });
+                        app.todo_done_result.clear();
+                    }
+                    _ => {
+                        // no contact: mark done now, nothing to log
+                        if let Err(e) = app.db.set_todo_done(id, true) {
+                            app.set_error(e);
+                        }
+                        app.set_status(
+                            "ทำเครื่องหมายเสร็จแล้ว — งานนี้ไม่มีรายชื่อ จึงไม่บันทึกลงประวัติ",
+                        );
+                    }
+                }
             }
         }
         if let Some(id) = edit_req {
