@@ -306,6 +306,11 @@ pub fn set_me_ppv(conn: &Connection, ppv: i64) -> Result<()> {
 // Activity history
 // ---------------------------------------------------------------------------
 
+/// Activity kind logged when a Todo is ticked complete. Seeded into
+/// `activity_kinds` by migration v8 so it appears in the history filter and the
+/// activity-kinds manager; stored as text on each activity row regardless.
+pub const TODO_DONE_KIND: &str = "ทำงานที่ต้องทำเสร็จ";
+
 /// Log an interaction with a contact; returns the new activity id.
 pub fn add_activity(conn: &Connection, contact_id: i64, kind: &str, note: &str) -> Result<i64> {
     conn.execute(
@@ -1291,6 +1296,13 @@ mod tests {
         delete_activity_kind(&conn, id).unwrap();
         assert!(!list_activity_kinds(&conn).unwrap().iter().any(|k| k.id == id));
         assert_eq!(list_activities(&conn, cid).unwrap()[0].kind, "จัดส่ง");
+    }
+
+    #[test]
+    fn migration_seeds_todo_done_kind() {
+        let conn = mem();
+        let kinds = list_activity_kinds(&conn).unwrap();
+        assert!(kinds.iter().any(|k| k.name == TODO_DONE_KIND));
     }
 
     #[test]

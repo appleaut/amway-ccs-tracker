@@ -3,12 +3,12 @@
 //! Migrations are versioned through SQLite's `PRAGMA user_version`. Bumping the
 //! schema means adding a new block guarded by the current version.
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 7;
+const CURRENT_VERSION: i64 = 8;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -174,6 +174,15 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             );
             CREATE INDEX IF NOT EXISTS idx_todos_contact ON todos(contact_id);
             CREATE INDEX IF NOT EXISTS idx_todos_due     ON todos(due_date);",
+        )?;
+    }
+
+    if version < 8 {
+        // Seed the activity kind logged when a Todo is ticked complete
+        // (activity_kinds is created by the v5 migration above).
+        conn.execute(
+            "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
+            params![crate::db::queries::TODO_DONE_KIND],
         )?;
     }
 
