@@ -92,6 +92,12 @@ pub struct AppState {
     pub pending_todo_done: Option<crate::ui::todo_done::PendingTodoDone>,
     /// Result-text buffer for the todo-completion dialog.
     pub todo_done_result: String,
+    /// An advance whose collect-action is awaiting its date + note (drives the
+    /// `ui::advance_collect` modal); `None` when no collect dialog is open.
+    pub pending_advance_collect: Option<crate::ui::advance_collect::PendingAdvanceCollect>,
+    /// Collection-date and note buffers for the advance-collect dialog.
+    pub advance_collect_date: chrono::NaiveDate,
+    pub advance_collect_note: String,
 }
 
 impl AppState {
@@ -143,6 +149,9 @@ impl AppState {
             todo_who_filter: crate::ui::todo::TodoWhoFilter::All,
             pending_todo_done: None,
             todo_done_result: String::new(),
+            pending_advance_collect: None,
+            advance_collect_date: chrono::Local::now().date_naive(),
+            advance_collect_note: String::new(),
         })
     }
 
@@ -376,6 +385,7 @@ impl eframe::App for AppState {
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
         ui::todo_done::render(self, ctx);
+        ui::advance_collect::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
         ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);
