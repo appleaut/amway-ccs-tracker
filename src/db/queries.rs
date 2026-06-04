@@ -791,8 +791,8 @@ pub fn done_note(task: &str, result: &str) -> String {
     }
 }
 
-/// Format a non-negative integer with comma thousands separators
-/// (e.g. `1740 → "1,740"`). Negative numbers keep a leading `-`.
+/// Format an integer with comma thousands separators
+/// (e.g. `1740 → "1,740"`, `-1740 → "-1,740"`).
 pub fn group_thousands(n: i64) -> String {
     let digits = n.unsigned_abs().to_string();
     let mut out = String::new();
@@ -1631,6 +1631,7 @@ mod tests {
         assert_eq!(group_thousands(740), "740");
         assert_eq!(group_thousands(1740), "1,740");
         assert_eq!(group_thousands(1234567), "1,234,567");
+        assert_eq!(group_thousands(-1740), "-1,740");
     }
 
     #[test]
