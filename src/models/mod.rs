@@ -8,6 +8,7 @@
 //! * [`todo`] — a task, optionally tied to a contact, with a due date and done flag.
 
 pub mod activity;
+pub mod advance;
 pub mod contact;
 pub mod enums;
 pub mod followup;

@@ -791,6 +791,36 @@ pub fn done_note(task: &str, result: &str) -> String {
     }
 }
 
+/// Format a non-negative integer with comma thousands separators
+/// (e.g. `1740 → "1,740"`). Negative numbers keep a leading `-`.
+pub fn group_thousands(n: i64) -> String {
+    let digits = n.unsigned_abs().to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    if n < 0 {
+        format!("-{out}")
+    } else {
+        out
+    }
+}
+
+/// Build the activity note for a collected advance: `"<item> — <amount> บาท"`,
+/// plus `" — <note>"` when a (trimmed) collection note was entered.
+pub fn advance_note(item: &str, amount: i64, note: &str) -> String {
+    let base = format!("{item} — {} บาท", group_thousands(amount));
+    let note = note.trim();
+    if note.is_empty() {
+        base
+    } else {
+        format!("{base} — {note}")
+    }
+}
+
 /// Add a task; returns the new id. `task` is trimmed and must be non-empty.
 pub fn add_todo(
     conn: &Connection,
@@ -1593,5 +1623,23 @@ mod tests {
         assert_eq!(count_overdue_todos(&conn).unwrap(), 1); // only unfinished past-due
         // Inclusive on both ends: "due today" and in_three count; in_ten is beyond 7.
         assert_eq!(count_due_soon_todos(&conn, 7).unwrap(), 2);
+    }
+
+    #[test]
+    fn group_thousands_formats_with_commas() {
+        assert_eq!(group_thousands(0), "0");
+        assert_eq!(group_thousands(740), "740");
+        assert_eq!(group_thousands(1740), "1,740");
+        assert_eq!(group_thousands(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn advance_note_formats_item_amount_and_note() {
+        assert_eq!(
+            advance_note("Nutrilite โปรตีน", 1740, "โอนผ่านพร้อมเพย์"),
+            "Nutrilite โปรตีน — 1,740 บาท — โอนผ่านพร้อมเพย์"
+        );
+        assert_eq!(advance_note("ของ", 500, "   "), "ของ — 500 บาท");
+        assert_eq!(advance_note("ของ", 500, ""), "ของ — 500 บาท");
     }
 }
