@@ -8,6 +8,7 @@ pub mod activities;
 pub mod activity_kinds;
 pub mod activity_log;
 pub mod advance_collect;
+pub mod advances;
 pub mod confirm;
 pub mod customer_list;
 pub mod dashboard;
@@ -72,6 +73,7 @@ pub enum View {
     Abos,
     FollowUp,
     Todos,
+    Advances,
     Network,
     Activities,
     ActivityKinds,

@@ -98,6 +98,10 @@ pub struct AppState {
     /// Collection-date and note buffers for the advance-collect dialog.
     pub advance_collect_date: chrono::NaiveDate,
     pub advance_collect_note: String,
+    /// Advance Payments add/edit form state.
+    pub advance_form: crate::ui::advances::AdvanceForm,
+    /// Status filter on the Advance Payments page.
+    pub advance_status_filter: crate::ui::advances::AdvanceStatusFilter,
 }
 
 impl AppState {
@@ -152,6 +156,8 @@ impl AppState {
             pending_advance_collect: None,
             advance_collect_date: chrono::Local::now().date_naive(),
             advance_collect_note: String::new(),
+            advance_form: crate::ui::advances::AdvanceForm::default(),
+            advance_status_filter: crate::ui::advances::AdvanceStatusFilter::Outstanding,
         })
     }
 
@@ -203,6 +209,7 @@ impl AppState {
             (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
             (View::Todos, "📅  สิ่งที่ต้องทำ"),
+            (View::Advances, "💵  สำรองจ่าย"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Activities, "📝  ประวัติติดต่อ"),
             (View::ActivityKinds, "📋  ประเภทกิจกรรม"),
@@ -375,6 +382,7 @@ impl eframe::App for AppState {
             View::Abos => ui::abo_list::render(self, ui),
             View::FollowUp => ui::followup::render(self, ui),
             View::Todos => ui::todo::render(self, ui),
+            View::Advances => ui::advances::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
             View::Activities => ui::activities::render(self, ui),
             View::ActivityKinds => ui::activity_kinds::render(self, ui),
