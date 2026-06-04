@@ -16,6 +16,7 @@ pub mod forms;
 pub mod prospect_list;
 pub mod rank_advisor;
 pub mod todo;
+pub mod todo_done;
 
 /// CCS brand accent (teal, #00BCD4). Used for widget fills / selection tint.
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(0x00, 0xBC, 0xD4);

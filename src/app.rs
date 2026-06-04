@@ -89,6 +89,11 @@ pub struct AppState {
     pub todo_status_filter: crate::ui::todo::TodoStatusFilter,
     /// Contact-type filter on the Todo List page.
     pub todo_who_filter: crate::ui::todo::TodoWhoFilter,
+    /// A todo whose done-toggle is awaiting its result text (drives the
+    /// `ui::todo_done` modal); `None` when no completion dialog is open.
+    pub pending_todo_done: Option<crate::ui::todo_done::PendingTodoDone>,
+    /// Result-text buffer for the todo-completion dialog.
+    pub todo_done_result: String,
 }
 
 impl AppState {
@@ -138,6 +143,8 @@ impl AppState {
             todo_form: crate::ui::todo::TodoForm::default(),
             todo_status_filter: crate::ui::todo::TodoStatusFilter::Pending,
             todo_who_filter: crate::ui::todo::TodoWhoFilter::All,
+            pending_todo_done: None,
+            todo_done_result: String::new(),
         })
     }
 
@@ -466,6 +473,7 @@ impl eframe::App for AppState {
         // Modals render on top of whatever view is active.
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
+        ui::todo_done::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
         ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);
