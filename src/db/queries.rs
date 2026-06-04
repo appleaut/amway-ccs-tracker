@@ -311,6 +311,10 @@ pub fn set_me_ppv(conn: &Connection, ppv: i64) -> Result<()> {
 /// activity-kinds manager; stored as text on each activity row regardless.
 pub const TODO_DONE_KIND: &str = "ทำงานที่ต้องทำเสร็จ";
 
+/// Activity kind logged when an advance payment is collected. Seeded by the v9
+/// migration; stored as text on each activity row (like all kinds).
+pub const ADVANCE_COLLECTED_KIND: &str = "เก็บเงินค่าสินค้า (สำรองจ่าย)";
+
 /// Log an interaction with a contact; returns the new activity id.
 pub fn add_activity(conn: &Connection, contact_id: i64, kind: &str, note: &str) -> Result<i64> {
     conn.execute(
@@ -1342,6 +1346,13 @@ mod tests {
         let conn = mem();
         let kinds = list_activity_kinds(&conn).unwrap();
         assert!(kinds.iter().any(|k| k.name == TODO_DONE_KIND));
+    }
+
+    #[test]
+    fn migration_seeds_advance_collected_kind() {
+        let conn = mem();
+        let kinds = list_activity_kinds(&conn).unwrap();
+        assert!(kinds.iter().any(|k| k.name == ADVANCE_COLLECTED_KIND));
     }
 
     #[test]
