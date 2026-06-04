@@ -1107,6 +1107,51 @@ pub fn outstanding_total(conn: &Connection) -> Result<i64> {
     Ok(total)
 }
 
+/// Mark an advance collected and, when it is tied to a contact, log an
+/// `ADVANCE_COLLECTED_KIND` activity with `advance_note(item, amount, note)` as
+/// its detail — both in one transaction. The activity timestamp uses
+/// `collected_date` (at the current local time) so it lands on the right day in
+/// the history. A contactless advance is still marked collected, with no activity.
+pub fn collect_advance(
+    conn: &Connection,
+    id: i64,
+    collected_date: NaiveDate,
+    note: &str,
+) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let note = note.trim();
+    tx.execute(
+        "UPDATE advances SET collected = 1, collected_at = ?1, collected_note = ?2 WHERE id = ?3",
+        params![collected_date.format("%Y-%m-%d").to_string(), note, id],
+    )?;
+    let row: Option<(Option<i64>, String, i64)> = tx
+        .query_row(
+            "SELECT contact_id, item, amount FROM advances WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    if let Some((Some(contact_id), item, amount)) = row {
+        let created_at = collected_date
+            .and_time(Local::now().time())
+            .and_local_timezone(Local)
+            .single()
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| Local::now().to_rfc3339());
+        tx.execute(
+            "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                contact_id,
+                ADVANCE_COLLECTED_KIND,
+                advance_note(&item, amount, note),
+                created_at
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard aggregates
 // ---------------------------------------------------------------------------
@@ -1867,5 +1912,49 @@ mod tests {
         add_advance(&conn, None, "a", 100, d("2026-06-01"), "").unwrap();
         add_advance(&conn, None, "b", 250, d("2026-06-02"), "").unwrap();
         assert_eq!(outstanding_total(&conn).unwrap(), 350);
+    }
+
+    #[test]
+    fn collect_advance_logs_activity_for_contact() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ธนา")).unwrap();
+        let aid =
+            add_advance(&conn, Some(cid), "Nutrilite โปรตีน", 1740, d("2026-06-01"), "").unwrap();
+
+        collect_advance(&conn, aid, d("2026-06-05"), "โอนผ่านพร้อมเพย์").unwrap();
+
+        let rows = list_advances(&conn, "", None).unwrap();
+        let a = &rows.iter().find(|r| r.advance.id == aid).unwrap().advance;
+        assert!(a.collected);
+        assert_eq!(a.collected_at, Some(d("2026-06-05")));
+
+        let acts = list_activities(&conn, cid).unwrap();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].kind, ADVANCE_COLLECTED_KIND);
+        assert_eq!(acts[0].note, "Nutrilite โปรตีน — 1,740 บาท — โอนผ่านพร้อมเพย์");
+    }
+
+    #[test]
+    fn collect_advance_without_contact_does_not_log() {
+        let conn = mem();
+        let aid = add_advance(&conn, None, "ของส่วนตัว", 500, d("2026-06-01"), "").unwrap();
+
+        collect_advance(&conn, aid, d("2026-06-02"), "").unwrap();
+
+        assert!(list_advances(&conn, "", None).unwrap()[0].advance.collected);
+        assert_eq!(list_all_activities(&conn, "").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn collect_advance_excluded_from_outstanding() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("มานี")).unwrap();
+        add_advance(&conn, Some(cid), "ค้าง", 200, d("2026-06-01"), "").unwrap();
+        let paid = add_advance(&conn, Some(cid), "จ่ายแล้ว", 800, d("2026-06-01"), "").unwrap();
+        collect_advance(&conn, paid, d("2026-06-03"), "").unwrap();
+
+        assert_eq!(outstanding_total(&conn).unwrap(), 200);
+        assert_eq!(list_advances(&conn, "", Some(false)).unwrap().len(), 1);
+        assert_eq!(list_advances(&conn, "", Some(true)).unwrap().len(), 1);
     }
 }
