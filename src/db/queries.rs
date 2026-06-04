@@ -1957,4 +1957,29 @@ mod tests {
         assert_eq!(list_advances(&conn, "", Some(false)).unwrap().len(), 1);
         assert_eq!(list_advances(&conn, "", Some(true)).unwrap().len(), 1);
     }
+
+    #[test]
+    fn advance_contact_set_null_on_delete() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("เอ")).unwrap();
+        add_advance(&conn, Some(cid), "ของ", 100, d("2026-06-01"), "").unwrap();
+        delete_contact(&conn, cid).unwrap();
+        // The money record survives; only the contact link is nulled.
+        let rows = list_advances(&conn, "", None).unwrap();
+        assert_eq!(rows.len(), 1, "advance survives contact deletion");
+        assert_eq!(rows[0].advance.contact_id, None);
+        assert_eq!(rows[0].contact_name, None);
+    }
+
+    #[test]
+    fn collect_advance_persists_collected_fields() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ป")).unwrap();
+        let aid = add_advance(&conn, Some(cid), "ของ", 300, d("2026-06-01"), "").unwrap();
+        collect_advance(&conn, aid, d("2026-06-07"), "  เงินสด  ").unwrap();
+        let a = list_advances(&conn, "", None).unwrap().into_iter().next().unwrap().advance;
+        assert!(a.collected);
+        assert_eq!(a.collected_at, Some(d("2026-06-07")));
+        assert_eq!(a.collected_note.as_deref(), Some("เงินสด")); // trimmed
+    }
 }
