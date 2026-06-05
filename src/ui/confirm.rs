@@ -12,6 +12,7 @@ pub enum PendingDelete {
     Contact { id: i64, name: String },
     ActivityKind { id: i64, name: String },
     Todo { id: i64, name: String },
+    Advance { id: i64, item: String },
 }
 
 pub fn render(app: &mut AppState, ctx: &egui::Context) {
@@ -40,6 +41,9 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         }
         PendingDelete::Todo { name, .. } => {
             (name.clone(), "งานนี้จะถูกลบถาวร".to_string())
+        }
+        PendingDelete::Advance { item, .. } => {
+            (item.clone(), "รายการสำรองจ่ายนี้จะถูกลบถาวร".to_string())
         }
     };
 
@@ -80,6 +84,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
             PendingDelete::Contact { id, .. } => app.db.delete_contact(*id),
             PendingDelete::ActivityKind { id, .. } => app.db.delete_activity_kind(*id),
             PendingDelete::Todo { id, .. } => app.db.delete_todo(*id),
+            PendingDelete::Advance { id, .. } => app.db.delete_advance(*id),
         };
         match result {
             Ok(()) => app.set_status(format!("ลบ \"{name}\" เรียบร้อย")),

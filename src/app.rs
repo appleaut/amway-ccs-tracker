@@ -92,6 +92,16 @@ pub struct AppState {
     pub pending_todo_done: Option<crate::ui::todo_done::PendingTodoDone>,
     /// Result-text buffer for the todo-completion dialog.
     pub todo_done_result: String,
+    /// An advance whose collect-action is awaiting its date + note (drives the
+    /// `ui::advance_collect` modal); `None` when no collect dialog is open.
+    pub pending_advance_collect: Option<crate::ui::advance_collect::PendingAdvanceCollect>,
+    /// Collection-date and note buffers for the advance-collect dialog.
+    pub advance_collect_date: chrono::NaiveDate,
+    pub advance_collect_note: String,
+    /// Advance Payments add/edit form state.
+    pub advance_form: crate::ui::advances::AdvanceForm,
+    /// Status filter on the Advance Payments page.
+    pub advance_status_filter: crate::ui::advances::AdvanceStatusFilter,
 }
 
 impl AppState {
@@ -143,6 +153,11 @@ impl AppState {
             todo_who_filter: crate::ui::todo::TodoWhoFilter::All,
             pending_todo_done: None,
             todo_done_result: String::new(),
+            pending_advance_collect: None,
+            advance_collect_date: chrono::Local::now().date_naive(),
+            advance_collect_note: String::new(),
+            advance_form: crate::ui::advances::AdvanceForm::default(),
+            advance_status_filter: crate::ui::advances::AdvanceStatusFilter::Outstanding,
         })
     }
 
@@ -194,6 +209,7 @@ impl AppState {
             (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
             (View::Todos, "📅  สิ่งที่ต้องทำ"),
+            (View::Advances, "💵  สำรองจ่าย"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Activities, "📝  ประวัติติดต่อ"),
             (View::ActivityKinds, "📋  ประเภทกิจกรรม"),
@@ -366,6 +382,7 @@ impl eframe::App for AppState {
             View::Abos => ui::abo_list::render(self, ui),
             View::FollowUp => ui::followup::render(self, ui),
             View::Todos => ui::todo::render(self, ui),
+            View::Advances => ui::advances::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
             View::Activities => ui::activities::render(self, ui),
             View::ActivityKinds => ui::activity_kinds::render(self, ui),
@@ -376,6 +393,7 @@ impl eframe::App for AppState {
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
         ui::todo_done::render(self, ctx);
+        ui::advance_collect::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
         ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);

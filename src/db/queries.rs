@@ -13,6 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use crate::error::{AppError, Result};
 use crate::models::activity::Activity;
+use crate::models::advance::Advance;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
 use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank, SponsorStep};
 use crate::models::followup::FollowUpSheet;
@@ -310,6 +311,10 @@ pub fn set_me_ppv(conn: &Connection, ppv: i64) -> Result<()> {
 /// `activity_kinds` by migration v8 so it appears in the history filter and the
 /// activity-kinds manager; stored as text on each activity row regardless.
 pub const TODO_DONE_KIND: &str = "ทำงานที่ต้องทำเสร็จ";
+
+/// Activity kind logged when an advance payment is collected. Seeded by the v9
+/// migration; stored as text on each activity row (like all kinds).
+pub const ADVANCE_COLLECTED_KIND: &str = "เก็บเงินค่าสินค้า (สำรองจ่าย)";
 
 /// Log an interaction with a contact; returns the new activity id.
 pub fn add_activity(conn: &Connection, contact_id: i64, kind: &str, note: &str) -> Result<i64> {
@@ -787,6 +792,36 @@ pub fn done_note(task: &str, result: &str) -> String {
     }
 }
 
+/// Format an integer with comma thousands separators
+/// (e.g. `1740 → "1,740"`, `-1740 → "-1,740"`).
+pub fn group_thousands(n: i64) -> String {
+    let digits = n.unsigned_abs().to_string();
+    let mut out = String::new();
+    for (i, ch) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    if n < 0 {
+        format!("-{out}")
+    } else {
+        out
+    }
+}
+
+/// Build the activity note for a collected advance: `"<item> — <amount> บาท"`,
+/// plus `" — <note>"` when a (trimmed) collection note was entered.
+pub fn advance_note(item: &str, amount: i64, note: &str) -> String {
+    let base = format!("{item} — {} บาท", group_thousands(amount));
+    let note = note.trim();
+    if note.is_empty() {
+        base
+    } else {
+        format!("{base} — {note}")
+    }
+}
+
 /// Add a task; returns the new id. `task` is trimmed and must be non-empty.
 pub fn add_todo(
     conn: &Connection,
@@ -929,6 +964,192 @@ pub fn count_due_soon_todos(conn: &Connection, days: i64) -> Result<i64> {
         ],
         |r| r.get(0),
     )?)
+}
+
+// ---------------------------------------------------------------------------
+// Advances
+// ---------------------------------------------------------------------------
+
+/// An advance joined with its contact (name + type), for the list view.
+pub struct AdvanceRow {
+    pub advance: Advance,
+    pub contact_name: Option<String>,
+    pub contact_type: Option<ContactType>,
+}
+
+/// Add an advance; returns the new id. `item` is trimmed and must be non-empty;
+/// `amount` must be positive. `note` is the optional create-time remark.
+pub fn add_advance(
+    conn: &Connection,
+    contact_id: Option<i64>,
+    item: &str,
+    amount: i64,
+    advance_date: NaiveDate,
+    note: &str,
+) -> Result<i64> {
+    let item = item.trim();
+    if item.is_empty() {
+        return Err(AppError::validation("กรุณากรอกรายการสินค้า"));
+    }
+    if amount <= 0 {
+        return Err(AppError::validation("จำนวนเงินต้องมากกว่า 0"));
+    }
+    conn.execute(
+        "INSERT INTO advances (contact_id, item, amount, advance_date, note, collected, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
+        params![
+            contact_id,
+            item,
+            amount,
+            advance_date.format("%Y-%m-%d").to_string(),
+            note.trim(),
+            Local::now().to_rfc3339()
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Update an advance's contact / item / amount / date / note (not the collected
+/// fields or `created_at`).
+pub fn update_advance(conn: &Connection, a: &Advance) -> Result<()> {
+    let item = a.item.trim();
+    if item.is_empty() {
+        return Err(AppError::validation("กรุณากรอกรายการสินค้า"));
+    }
+    if a.amount <= 0 {
+        return Err(AppError::validation("จำนวนเงินต้องมากกว่า 0"));
+    }
+    conn.execute(
+        "UPDATE advances SET contact_id = ?1, item = ?2, amount = ?3, advance_date = ?4, note = ?5
+         WHERE id = ?6",
+        params![
+            a.contact_id,
+            item,
+            a.amount,
+            a.advance_date.format("%Y-%m-%d").to_string(),
+            a.note.trim(),
+            a.id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Delete an advance.
+pub fn delete_advance(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM advances WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+fn row_to_advance_row(row: &Row) -> rusqlite::Result<AdvanceRow> {
+    let advance_date: String = row.get(4)?;
+    let collected_at: Option<String> = row.get(7)?;
+    let created: String = row.get(9)?;
+    let name: Option<String> = row.get(10)?;
+    let nickname: Option<String> = row.get(11)?;
+    let ctype: Option<String> = row.get(12)?;
+    let contact_name = name.map(|n| match nickname {
+        Some(nk) if !nk.is_empty() => format!("{n} ({nk})"),
+        _ => n,
+    });
+    Ok(AdvanceRow {
+        advance: Advance {
+            id: row.get(0)?,
+            contact_id: row.get(1)?,
+            item: row.get(2)?,
+            amount: row.get(3)?,
+            advance_date: NaiveDate::parse_from_str(&advance_date, "%Y-%m-%d")
+                .unwrap_or_else(|_| Local::now().date_naive()),
+            note: row.get(5)?,
+            collected: row.get::<_, i64>(6)? != 0,
+            collected_at: collected_at
+                .and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
+            collected_note: row.get(8)?,
+            created_at: parse_dt(&created),
+        },
+        contact_name,
+        contact_type: ctype.map(|s| ContactType::from_db(&s)),
+    })
+}
+
+/// All advances, joined with their contact, filtered by a substring of the item
+/// or contact name/nickname, and by collected status when `collected_filter` is
+/// `Some`. Order: outstanding first, then oldest advance date, newest id last.
+pub fn list_advances(
+    conn: &Connection,
+    query: &str,
+    collected_filter: Option<bool>,
+) -> Result<Vec<AdvanceRow>> {
+    let like = format!("%{query}%");
+    let mut sql = String::from(
+        "SELECT a.id, a.contact_id, a.item, a.amount, a.advance_date, a.note,
+                a.collected, a.collected_at, a.collected_note, a.created_at,
+                c.name, c.nickname, c.contact_type
+         FROM advances a
+         LEFT JOIN contacts c ON c.id = a.contact_id
+         WHERE (a.item LIKE ?1 OR IFNULL(c.name,'') LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1)",
+    );
+    if let Some(c) = collected_filter {
+        sql.push_str(if c { " AND a.collected = 1" } else { " AND a.collected = 0" });
+    }
+    sql.push_str(" ORDER BY a.collected ASC, a.advance_date ASC, a.id DESC");
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![like], |row| row_to_advance_row(row))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Total baht of all outstanding (uncollected) advances.
+pub fn outstanding_total(conn: &Connection) -> Result<i64> {
+    let total: i64 = conn.query_row(
+        "SELECT IFNULL(SUM(amount), 0) FROM advances WHERE collected = 0",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(total)
+}
+
+/// Mark an advance collected and, when it is tied to a contact, log an
+/// `ADVANCE_COLLECTED_KIND` activity with `advance_note(item, amount, note)` as
+/// its detail — both in one transaction. The activity timestamp uses
+/// `collected_date` (at the current local time) so it lands on the right day in
+/// the history. A contactless advance is still marked collected, with no activity.
+pub fn collect_advance(
+    conn: &Connection,
+    id: i64,
+    collected_date: NaiveDate,
+    note: &str,
+) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let note = note.trim();
+    tx.execute(
+        "UPDATE advances SET collected = 1, collected_at = ?1, collected_note = ?2 WHERE id = ?3",
+        params![collected_date.format("%Y-%m-%d").to_string(), note, id],
+    )?;
+    let row: Option<(Option<i64>, String, i64)> = tx
+        .query_row(
+            "SELECT contact_id, item, amount FROM advances WHERE id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    if let Some((Some(contact_id), item, amount)) = row {
+        let created_at = collected_date
+            .and_time(Local::now().time())
+            .and_local_timezone(Local)
+            .single()
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| Local::now().to_rfc3339());
+        tx.execute(
+            "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                contact_id,
+                ADVANCE_COLLECTED_KIND,
+                advance_note(&item, amount, note),
+                created_at
+            ],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,6 +1566,13 @@ mod tests {
     }
 
     #[test]
+    fn migration_seeds_advance_collected_kind() {
+        let conn = mem();
+        let kinds = list_activity_kinds(&conn).unwrap();
+        assert!(kinds.iter().any(|k| k.name == ADVANCE_COLLECTED_KIND));
+    }
+
+    #[test]
     fn customer_rows_resolve_upline_name() {
         let conn = mem();
         let up = insert_contact(&conn, &sample_abo("Mentor", Rank::Cl)).unwrap();
@@ -1582,5 +1810,176 @@ mod tests {
         assert_eq!(count_overdue_todos(&conn).unwrap(), 1); // only unfinished past-due
         // Inclusive on both ends: "due today" and in_three count; in_ten is beyond 7.
         assert_eq!(count_due_soon_todos(&conn, 7).unwrap(), 2);
+    }
+
+    #[test]
+    fn group_thousands_formats_with_commas() {
+        assert_eq!(group_thousands(0), "0");
+        assert_eq!(group_thousands(740), "740");
+        assert_eq!(group_thousands(1740), "1,740");
+        assert_eq!(group_thousands(1234567), "1,234,567");
+        assert_eq!(group_thousands(-1740), "-1,740");
+    }
+
+    #[test]
+    fn advance_note_formats_item_amount_and_note() {
+        assert_eq!(
+            advance_note("Nutrilite โปรตีน", 1740, "โอนผ่านพร้อมเพย์"),
+            "Nutrilite โปรตีน — 1,740 บาท — โอนผ่านพร้อมเพย์"
+        );
+        assert_eq!(advance_note("ของ", 500, "   "), "ของ — 500 บาท");
+        assert_eq!(advance_note("ของ", 500, ""), "ของ — 500 บาท");
+    }
+
+    #[test]
+    fn add_advance_validates_item_and_amount() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ลูกค้า")).unwrap();
+        assert!(add_advance(&conn, Some(cid), "   ", 100, d("2026-06-04"), "").is_err());
+        assert!(add_advance(&conn, Some(cid), "ของ", 0, d("2026-06-04"), "").is_err());
+        assert!(add_advance(&conn, Some(cid), "ของ", -5, d("2026-06-04"), "").is_err());
+        assert!(add_advance(&conn, Some(cid), "ของ", 100, d("2026-06-04"), "").is_ok());
+    }
+
+    #[test]
+    fn add_then_list_round_trips_fields() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ตูน")).unwrap();
+        add_advance(&conn, Some(cid), "  Nutrilite  ", 1740, d("2026-06-04"), "  รับของแล้ว  ")
+            .unwrap();
+        let rows = list_advances(&conn, "", None).unwrap();
+        assert_eq!(rows.len(), 1);
+        let a = &rows[0].advance;
+        assert_eq!(a.item, "Nutrilite"); // trimmed
+        assert_eq!(a.amount, 1740);
+        assert_eq!(a.advance_date, d("2026-06-04"));
+        assert_eq!(a.note, "รับของแล้ว"); // trimmed
+        assert!(!a.collected);
+        assert_eq!(rows[0].contact_name.as_deref(), Some("ตูน"));
+        assert_eq!(rows[0].contact_type, Some(ContactType::Prospect));
+    }
+
+    #[test]
+    fn list_advances_orders_outstanding_oldest_first() {
+        let conn = mem();
+        add_advance(&conn, None, "ใหม่กว่า", 200, d("2026-03-01"), "").unwrap();
+        add_advance(&conn, None, "เก่าสุด", 100, d("2026-01-01"), "").unwrap();
+        add_advance(&conn, None, "กลาง", 150, d("2026-02-01"), "").unwrap();
+        let items: Vec<String> =
+            list_advances(&conn, "", None).unwrap().into_iter().map(|r| r.advance.item).collect();
+        assert_eq!(items, vec!["เก่าสุด", "กลาง", "ใหม่กว่า"]);
+
+        // Substring search on the item text.
+        let found = list_advances(&conn, "เก่า", None).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].advance.item, "เก่าสุด");
+    }
+
+    #[test]
+    fn update_and_delete_advance() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("เอ")).unwrap();
+        let id = add_advance(&conn, Some(cid), "ของเดิม", 100, d("2026-06-01"), "x").unwrap();
+
+        let mut a = list_advances(&conn, "", None).unwrap()[0].advance.clone();
+        a.item = "ของใหม่".into();
+        a.amount = 250;
+        a.advance_date = d("2026-06-02");
+        a.note = "แก้แล้ว".into();
+        a.contact_id = None;
+        update_advance(&conn, &a).unwrap();
+
+        let rows = list_advances(&conn, "", None).unwrap();
+        assert_eq!(rows[0].advance.item, "ของใหม่");
+        assert_eq!(rows[0].advance.amount, 250);
+        assert_eq!(rows[0].advance.advance_date, d("2026-06-02"));
+        assert_eq!(rows[0].advance.note, "แก้แล้ว");
+        assert_eq!(rows[0].advance.contact_id, None);
+
+        // Blank item / non-positive amount are rejected on update too.
+        let mut bad = rows[0].advance.clone();
+        bad.item = "   ".into();
+        assert!(update_advance(&conn, &bad).is_err());
+
+        delete_advance(&conn, id).unwrap();
+        assert!(list_advances(&conn, "", None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn outstanding_total_sums_outstanding() {
+        let conn = mem();
+        assert_eq!(outstanding_total(&conn).unwrap(), 0);
+        add_advance(&conn, None, "a", 100, d("2026-06-01"), "").unwrap();
+        add_advance(&conn, None, "b", 250, d("2026-06-02"), "").unwrap();
+        assert_eq!(outstanding_total(&conn).unwrap(), 350);
+    }
+
+    #[test]
+    fn collect_advance_logs_activity_for_contact() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ธนา")).unwrap();
+        let aid =
+            add_advance(&conn, Some(cid), "Nutrilite โปรตีน", 1740, d("2026-06-01"), "").unwrap();
+
+        collect_advance(&conn, aid, d("2026-06-05"), "โอนผ่านพร้อมเพย์").unwrap();
+
+        let rows = list_advances(&conn, "", None).unwrap();
+        let a = &rows.iter().find(|r| r.advance.id == aid).unwrap().advance;
+        assert!(a.collected);
+        assert_eq!(a.collected_at, Some(d("2026-06-05")));
+
+        let acts = list_activities(&conn, cid).unwrap();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].kind, ADVANCE_COLLECTED_KIND);
+        assert_eq!(acts[0].note, "Nutrilite โปรตีน — 1,740 บาท — โอนผ่านพร้อมเพย์");
+    }
+
+    #[test]
+    fn collect_advance_without_contact_does_not_log() {
+        let conn = mem();
+        let aid = add_advance(&conn, None, "ของส่วนตัว", 500, d("2026-06-01"), "").unwrap();
+
+        collect_advance(&conn, aid, d("2026-06-02"), "").unwrap();
+
+        assert!(list_advances(&conn, "", None).unwrap()[0].advance.collected);
+        assert_eq!(list_all_activities(&conn, "").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn collect_advance_excluded_from_outstanding() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("มานี")).unwrap();
+        add_advance(&conn, Some(cid), "ค้าง", 200, d("2026-06-01"), "").unwrap();
+        let paid = add_advance(&conn, Some(cid), "จ่ายแล้ว", 800, d("2026-06-01"), "").unwrap();
+        collect_advance(&conn, paid, d("2026-06-03"), "").unwrap();
+
+        assert_eq!(outstanding_total(&conn).unwrap(), 200);
+        assert_eq!(list_advances(&conn, "", Some(false)).unwrap().len(), 1);
+        assert_eq!(list_advances(&conn, "", Some(true)).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn advance_contact_set_null_on_delete() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("เอ")).unwrap();
+        add_advance(&conn, Some(cid), "ของ", 100, d("2026-06-01"), "").unwrap();
+        delete_contact(&conn, cid).unwrap();
+        // The money record survives; only the contact link is nulled.
+        let rows = list_advances(&conn, "", None).unwrap();
+        assert_eq!(rows.len(), 1, "advance survives contact deletion");
+        assert_eq!(rows[0].advance.contact_id, None);
+        assert_eq!(rows[0].contact_name, None);
+    }
+
+    #[test]
+    fn collect_advance_persists_collected_fields() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ป")).unwrap();
+        let aid = add_advance(&conn, Some(cid), "ของ", 300, d("2026-06-01"), "").unwrap();
+        collect_advance(&conn, aid, d("2026-06-07"), "  เงินสด  ").unwrap();
+        let a = list_advances(&conn, "", None).unwrap().into_iter().next().unwrap().advance;
+        assert!(a.collected);
+        assert_eq!(a.collected_at, Some(d("2026-06-07")));
+        assert_eq!(a.collected_note.as_deref(), Some("เงินสด")); // trimmed
     }
 }

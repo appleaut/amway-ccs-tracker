@@ -8,7 +8,7 @@ use rusqlite::{params, Connection};
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 8;
+const CURRENT_VERSION: i64 = 9;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -183,6 +183,33 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute(
             "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
             params![crate::db::queries::TODO_DONE_KIND],
+        )?;
+    }
+
+    if version < 9 {
+        // Advance payments: money fronted to buy products for a contact, to be
+        // collected later. contact_id is nullable + SET NULL so the money record
+        // survives if the contact is deleted (the UI requires a contact at entry).
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS advances (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id     INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+                item           TEXT    NOT NULL,
+                amount         INTEGER NOT NULL,
+                advance_date   TEXT    NOT NULL,
+                note           TEXT    NOT NULL DEFAULT '',
+                collected      INTEGER NOT NULL DEFAULT 0,
+                collected_at   TEXT,
+                collected_note TEXT,
+                created_at     TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_advances_contact ON advances(contact_id);",
+        )?;
+        // Seed the activity kind logged when an advance is collected
+        // (activity_kinds is created by the v5 migration above).
+        conn.execute(
+            "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
+            params![crate::db::queries::ADVANCE_COLLECTED_KIND],
         )?;
     }
 

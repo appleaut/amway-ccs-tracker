@@ -94,6 +94,15 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut open_contact: Option<i64> = None;
     let mut delete_id: Option<i64> = None;
 
+    // The รายละเอียด column wraps long notes, so each row must be tall enough to
+    // show every wrapped line. Resolve the body font and one-line height now,
+    // before the table borrows `ui`; inside the body closure we lay out each note
+    // at the detail column's real width to derive that row's height.
+    let base_row_h = 30.0_f32;
+    let body_font = egui::TextStyle::Body.resolve(ui.style());
+    let line_h = ui.text_style_height(&egui::TextStyle::Body);
+    let ctx = ui.ctx().clone();
+
     TableBuilder::new(ui)
         .striped(true)
         .resizable(false)
@@ -112,8 +121,25 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             }
         })
         .body(|mut body| {
+            // Detail is column 4 (วันเวลา, ชื่อ, ประเภท, กิจกรรม, รายละเอียด, จัดการ);
+            // widths() gives its resolved width so a wrapped note's height matches.
+            let detail_w = body.widths().get(4).copied().unwrap_or(160.0);
+            let row_pad = (base_row_h - line_h).max(0.0);
             for row in &rows {
-                body.row(30.0, |mut tr| {
+                let h = if row.activity.note.is_empty() {
+                    base_row_h
+                } else {
+                    let galley = ctx.fonts(|f| {
+                        f.layout(
+                            row.activity.note.clone(),
+                            body_font.clone(),
+                            egui::Color32::WHITE, // colour is irrelevant; we only read the height
+                            detail_w,
+                        )
+                    });
+                    (galley.size().y + row_pad).max(base_row_h)
+                };
+                body.row(h, |mut tr| {
                     tr.col(|ui| {
                         ui.label(
                             egui::RichText::new(
@@ -149,7 +175,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                         if row.activity.note.is_empty() {
                             ui.weak("—");
                         } else {
-                            ui.label(&row.activity.note);
+                            ui.add(egui::Label::new(&row.activity.note).wrap());
                         }
                     });
                     tr.col(|ui| {

@@ -15,11 +15,12 @@ use rusqlite::Connection;
 
 use crate::error::Result;
 use crate::models::activity::Activity;
+use crate::models::advance::Advance;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
 use crate::models::enums::{ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use crate::models::todo::Todo;
-use queries::{AboRow, ActivityKindRow, ActivityLogRow, CustomerRow, ProspectRow, TodoRow};
+use queries::{AboRow, ActivityKindRow, ActivityLogRow, AdvanceRow, CustomerRow, ProspectRow, TodoRow};
 
 /// Owns the SQLite connection and exposes typed, validated operations.
 pub struct DbConnection {
@@ -176,6 +177,38 @@ impl DbConnection {
     #[allow(dead_code)]
     pub fn count_due_soon_todos(&self, days: i64) -> Result<i64> {
         queries::count_due_soon_todos(&self.conn, days)
+    }
+
+    // --- advances ---------------------------------------------------------
+
+    pub fn add_advance(
+        &self,
+        contact_id: Option<i64>,
+        item: &str,
+        amount: i64,
+        advance_date: NaiveDate,
+        note: &str,
+    ) -> Result<i64> {
+        queries::add_advance(&self.conn, contact_id, item, amount, advance_date, note)
+    }
+    pub fn update_advance(&self, a: &Advance) -> Result<()> {
+        queries::update_advance(&self.conn, a)
+    }
+    pub fn collect_advance(&self, id: i64, collected_date: NaiveDate, note: &str) -> Result<()> {
+        queries::collect_advance(&self.conn, id, collected_date, note)
+    }
+    pub fn delete_advance(&self, id: i64) -> Result<()> {
+        queries::delete_advance(&self.conn, id)
+    }
+    pub fn list_advances(
+        &self,
+        query: &str,
+        collected_filter: Option<bool>,
+    ) -> Result<Vec<AdvanceRow>> {
+        queries::list_advances(&self.conn, query, collected_filter)
+    }
+    pub fn outstanding_total(&self) -> Result<i64> {
+        queries::outstanding_total(&self.conn)
     }
 
     // --- aggregates / table rows -----------------------------------------
