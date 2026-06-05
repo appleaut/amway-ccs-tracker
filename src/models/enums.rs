@@ -286,3 +286,58 @@ impl SponsorStep {
         }
     }
 }
+
+/// A contact's RSVP for a meeting. Stored as a stable string; `from_db` falls
+/// back to `Undecided`. Actual post-event attendance is a separate nullable
+/// boolean on the attendee row, not part of this enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttendeeStatus {
+    Attending,
+    Undecided,
+    NotAttending,
+}
+
+impl AttendeeStatus {
+    pub const ALL: [AttendeeStatus; 3] = [
+        AttendeeStatus::Attending,
+        AttendeeStatus::Undecided,
+        AttendeeStatus::NotAttending,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AttendeeStatus::Attending => "Attending",
+            AttendeeStatus::Undecided => "Undecided",
+            AttendeeStatus::NotAttending => "NotAttending",
+        }
+    }
+
+    pub fn label_th(self) -> &'static str {
+        match self {
+            AttendeeStatus::Attending => "จะเข้าร่วม",
+            AttendeeStatus::Undecided => "รอตัดสินใจ",
+            AttendeeStatus::NotAttending => "ไม่เข้า",
+        }
+    }
+
+    pub fn from_db(s: &str) -> AttendeeStatus {
+        match s {
+            "Attending" => AttendeeStatus::Attending,
+            "NotAttending" => AttendeeStatus::NotAttending,
+            _ => AttendeeStatus::Undecided,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attendee_status_round_trips_and_defaults() {
+        for s in AttendeeStatus::ALL {
+            assert_eq!(AttendeeStatus::from_db(s.as_str()), s);
+        }
+        assert_eq!(AttendeeStatus::from_db("???"), AttendeeStatus::Undecided);
+    }
+}

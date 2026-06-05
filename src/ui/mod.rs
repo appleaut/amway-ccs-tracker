@@ -15,6 +15,8 @@ pub mod dashboard;
 pub mod downline_tree;
 pub mod followup;
 pub mod forms;
+pub mod meeting_form;
+pub mod meetings;
 pub mod prospect_list;
 pub mod rank_advisor;
 pub mod todo;
@@ -72,6 +74,7 @@ pub enum View {
     Customers,
     Abos,
     FollowUp,
+    Meetings,
     Todos,
     Advances,
     Network,

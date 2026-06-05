@@ -102,6 +102,12 @@ pub struct AppState {
     pub advance_form: crate::ui::advances::AdvanceForm,
     /// Status filter on the Advance Payments page.
     pub advance_status_filter: crate::ui::advances::AdvanceStatusFilter,
+    /// Add/edit meeting modal state.
+    pub meeting_form: crate::ui::meeting_form::MeetingForm,
+    /// Contact-type filter on the Meetings page.
+    pub meeting_who_filter: crate::ui::meetings::MeetingWhoFilter,
+    /// Whether the Meetings matrix also shows meetings that have already finished.
+    pub meeting_show_past: bool,
 }
 
 impl AppState {
@@ -158,6 +164,9 @@ impl AppState {
             advance_collect_note: String::new(),
             advance_form: crate::ui::advances::AdvanceForm::default(),
             advance_status_filter: crate::ui::advances::AdvanceStatusFilter::Outstanding,
+            meeting_form: crate::ui::meeting_form::MeetingForm::default(),
+            meeting_who_filter: crate::ui::meetings::MeetingWhoFilter::All,
+            meeting_show_past: false,
         })
     }
 
@@ -208,6 +217,7 @@ impl AppState {
             (View::Customers, "💳  ลูกค้า VIP"),
             (View::Abos, "💼  นักธุรกิจ"),
             (View::FollowUp, "✅  ติดตามผล"),
+            (View::Meetings, "🎟  งานประชุม"),
             (View::Todos, "📅  สิ่งที่ต้องทำ"),
             (View::Advances, "💵  สำรองจ่าย"),
             (View::Network, "🌳  เครือข่าย"),
@@ -381,6 +391,7 @@ impl eframe::App for AppState {
             View::Customers => ui::customer_list::render(self, ui),
             View::Abos => ui::abo_list::render(self, ui),
             View::FollowUp => ui::followup::render(self, ui),
+            View::Meetings => ui::meetings::render(self, ui),
             View::Todos => ui::todo::render(self, ui),
             View::Advances => ui::advances::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
@@ -394,6 +405,7 @@ impl eframe::App for AppState {
         ui::confirm::render(self, ctx);
         ui::todo_done::render(self, ctx);
         ui::advance_collect::render(self, ctx);
+        ui::meeting_form::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
         ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);
