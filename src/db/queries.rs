@@ -2338,6 +2338,10 @@ mod tests {
         upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, Some(false)).unwrap();
         upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
         assert_eq!(list_activities(&conn, cid).unwrap().len(), 2);
+
+        // Clearing then re-recording "came" is a fresh transition → logs again.
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, Some(true)).unwrap();
+        assert_eq!(list_activities(&conn, cid).unwrap().len(), 3);
     }
 
     #[test]
