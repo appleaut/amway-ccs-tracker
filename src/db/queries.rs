@@ -15,7 +15,8 @@ use crate::error::{AppError, Result};
 use crate::models::activity::Activity;
 use crate::models::advance::Advance;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::enums::{ContactType, Gender, NetworkCategory, Rank, SponsorStep};
+use crate::models::meeting::Meeting;
+use crate::models::enums::{AttendeeStatus, ContactType, Gender, NetworkCategory, Rank, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use crate::models::todo::Todo;
 use crate::utils::scoring;
@@ -1161,6 +1162,109 @@ pub fn collect_advance(
 }
 
 // ---------------------------------------------------------------------------
+// Meetings
+// ---------------------------------------------------------------------------
+
+fn row_to_meeting(row: &Row) -> rusqlite::Result<Meeting> {
+    let start: String = row.get(2)?;
+    let end: String = row.get(3)?;
+    let created: String = row.get(6)?;
+    Ok(Meeting {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        start_date: NaiveDate::parse_from_str(&start, "%Y-%m-%d")
+            .unwrap_or_else(|_| Local::now().date_naive()),
+        end_date: NaiveDate::parse_from_str(&end, "%Y-%m-%d")
+            .unwrap_or_else(|_| Local::now().date_naive()),
+        description: row.get(4)?,
+        fee: row.get(5)?,
+        created_at: parse_dt(&created),
+    })
+}
+
+/// Validate a meeting's fields: name non-empty, end not before start, fee >= 0.
+fn validate_meeting(name: &str, start: NaiveDate, end: NaiveDate, fee: i64) -> Result<()> {
+    if name.trim().is_empty() {
+        return Err(AppError::validation("กรุณากรอกชื่องาน"));
+    }
+    if end < start {
+        return Err(AppError::validation("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม"));
+    }
+    if fee < 0 {
+        return Err(AppError::validation("ค่าเข้างานต้องไม่ติดลบ"));
+    }
+    Ok(())
+}
+
+/// Add a meeting; returns the new id. `name`/`description` are trimmed.
+pub fn add_meeting(
+    conn: &Connection,
+    name: &str,
+    start: NaiveDate,
+    end: NaiveDate,
+    description: &str,
+    fee: i64,
+) -> Result<i64> {
+    validate_meeting(name, start, end, fee)?;
+    conn.execute(
+        "INSERT INTO meetings (name, start_date, end_date, description, fee, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            name.trim(),
+            start.format("%Y-%m-%d").to_string(),
+            end.format("%Y-%m-%d").to_string(),
+            description.trim(),
+            fee,
+            Local::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Update a meeting's fields (not `created_at`).
+pub fn update_meeting(conn: &Connection, m: &Meeting) -> Result<()> {
+    validate_meeting(&m.name, m.start_date, m.end_date, m.fee)?;
+    conn.execute(
+        "UPDATE meetings SET name = ?1, start_date = ?2, end_date = ?3, description = ?4, fee = ?5
+         WHERE id = ?6",
+        params![
+            m.name.trim(),
+            m.start_date.format("%Y-%m-%d").to_string(),
+            m.end_date.format("%Y-%m-%d").to_string(),
+            m.description.trim(),
+            m.fee,
+            m.id,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Delete a meeting; its attendee rows cascade.
+pub fn delete_meeting(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM meetings WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// All meetings ordered by start date. When `include_past` is false, only
+/// meetings whose `end_date` is today or later are returned.
+pub fn list_meetings(conn: &Connection, include_past: bool) -> Result<Vec<Meeting>> {
+    const COLS: &str = "id, name, start_date, end_date, description, fee, created_at";
+    if include_past {
+        let mut stmt =
+            conn.prepare(&format!("SELECT {COLS} FROM meetings ORDER BY start_date ASC, id ASC"))?;
+        let rows = stmt.query_map([], row_to_meeting)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    } else {
+        let today = Local::now().date_naive().format("%Y-%m-%d").to_string();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {COLS} FROM meetings WHERE end_date >= ?1 ORDER BY start_date ASC, id ASC"
+        ))?;
+        let rows = stmt.query_map([today], row_to_meeting)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard aggregates
 // ---------------------------------------------------------------------------
 
@@ -2007,5 +2111,56 @@ mod tests {
         assert!(a.collected);
         assert_eq!(a.collected_at, Some(d("2026-06-07")));
         assert_eq!(a.collected_note.as_deref(), Some("เงินสด")); // trimmed
+    }
+
+    #[test]
+    fn meeting_crud_round_trips() {
+        let conn = mem();
+        let id = add_meeting(&conn, "  สัมมนา CCS  ", d("2026-07-01"), d("2026-07-03"), "  ที่โรงแรม  ", 1500)
+            .unwrap();
+        let m = list_meetings(&conn, true).unwrap().into_iter().find(|m| m.id == id).unwrap();
+        assert_eq!(m.name, "สัมมนา CCS"); // trimmed
+        assert_eq!(m.start_date, d("2026-07-01"));
+        assert_eq!(m.end_date, d("2026-07-03"));
+        assert_eq!(m.description, "ที่โรงแรม"); // trimmed
+        assert_eq!(m.fee, 1500);
+
+        let mut m2 = m.clone();
+        m2.name = "สัมมนาใหญ่".into();
+        m2.fee = 2000;
+        m2.end_date = d("2026-07-04");
+        update_meeting(&conn, &m2).unwrap();
+        let m3 = list_meetings(&conn, true).unwrap().into_iter().find(|x| x.id == id).unwrap();
+        assert_eq!(m3.name, "สัมมนาใหญ่");
+        assert_eq!(m3.fee, 2000);
+        assert_eq!(m3.end_date, d("2026-07-04"));
+
+        delete_meeting(&conn, id).unwrap();
+        assert!(list_meetings(&conn, true).unwrap().is_empty());
+    }
+
+    #[test]
+    fn meeting_validation_rejects_bad_input() {
+        let conn = mem();
+        assert!(add_meeting(&conn, "   ", d("2026-07-01"), d("2026-07-01"), "", 0).is_err());
+        assert!(add_meeting(&conn, "x", d("2026-07-05"), d("2026-07-01"), "", 0).is_err());
+        assert!(add_meeting(&conn, "x", d("2026-07-01"), d("2026-07-01"), "", -1).is_err());
+        assert!(add_meeting(&conn, "x", d("2026-07-01"), d("2026-07-01"), "", 0).is_ok());
+    }
+
+    #[test]
+    fn list_meetings_filters_past_by_end_date() {
+        let conn = mem();
+        let today = Local::now().date_naive();
+        add_meeting(&conn, "เก่า", today - chrono::Duration::days(3), today - chrono::Duration::days(2), "", 0)
+            .unwrap();
+        add_meeting(&conn, "จบวันนี้", today - chrono::Duration::days(1), today, "", 0).unwrap();
+        add_meeting(&conn, "อนาคต", today + chrono::Duration::days(5), today + chrono::Duration::days(5), "", 0)
+            .unwrap();
+
+        let upcoming: Vec<String> =
+            list_meetings(&conn, false).unwrap().into_iter().map(|m| m.name).collect();
+        assert_eq!(upcoming, vec!["จบวันนี้", "อนาคต"]); // past excluded; ordered by start_date
+        assert_eq!(list_meetings(&conn, true).unwrap().len(), 3);
     }
 }
