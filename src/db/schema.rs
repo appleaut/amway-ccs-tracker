@@ -229,8 +229,8 @@ pub fn migrate(conn: &Connection) -> Result<()> {
             );
             CREATE TABLE IF NOT EXISTS meeting_attendees (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                meeting_id INTEGER NOT NULL REFERENCES meetings(id)  ON DELETE CASCADE,
-                contact_id INTEGER NOT NULL REFERENCES contacts(id)  ON DELETE CASCADE,
+                meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+                contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
                 status     TEXT    NOT NULL,
                 paid       INTEGER NOT NULL DEFAULT 0,
                 attended   INTEGER,
