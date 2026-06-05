@@ -103,6 +103,19 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let line_h = ui.text_style_height(&egui::TextStyle::Body);
     let ctx = ui.ctx().clone();
 
+    // Size the รายละเอียด column ourselves so it fills the leftover width and
+    // shrinks on a narrow window — keeping the trailing จัดการ column on-screen.
+    // egui_extras' `remainder` refuses to shrink below its widest rendered line
+    // (so it overflows the table); an explicit `exact` width is used verbatim.
+    // `others_w` (the summed width of the other, content-sized columns) is cached
+    // from the previous frame — it doesn't depend on this column, so one frame of
+    // lag is invisible and self-corrects, including on window resize.
+    let spacing_x = ui.spacing().item_spacing.x;
+    let scrollbar_w = ui.spacing().scroll.allocated_width();
+    let others_id = ui.id().with("activity_others_w");
+    let others_w = ui.data(|d| d.get_temp::<f32>(others_id)).unwrap_or(640.0);
+    let detail_w = (ui.available_width() - scrollbar_w - others_w - spacing_x * 5.0).max(160.0);
+
     TableBuilder::new(ui)
         .striped(true)
         .resizable(false)
@@ -111,7 +124,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         .column(Column::auto().at_least(150.0)) // ชื่อ
         .column(Column::auto().at_least(80.0)) // ประเภท
         .column(Column::auto().at_least(120.0)) // กิจกรรม
-        .column(Column::remainder().at_least(160.0)) // รายละเอียด
+        .column(Column::exact(detail_w)) // รายละเอียด — width computed above
         .column(Column::auto()) // จัดการ
         .header(28.0, |mut header| {
             for h in ["วันเวลา", "ชื่อ", "ประเภท", "กิจกรรม", "รายละเอียด", "จัดการ"] {
@@ -121,9 +134,15 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
             }
         })
         .body(|mut body| {
-            // Detail is column 4 (วันเวลา, ชื่อ, ประเภท, กิจกรรม, รายละเอียด, จัดการ);
-            // widths() gives its resolved width so a wrapped note's height matches.
-            let detail_w = body.widths().get(4).copied().unwrap_or(160.0);
+            // Cache the non-detail columns' summed width (every column but
+            // รายละเอียด, index 4) for next frame's `detail_w` computation above.
+            let others_now: f32 = body
+                .widths()
+                .iter()
+                .enumerate()
+                .filter_map(|(i, w)| (i != 4).then_some(*w))
+                .sum();
+            ctx.data_mut(|d| d.insert_temp(others_id, others_now));
             let row_pad = (base_row_h - line_h).max(0.0);
             for row in &rows {
                 let h = if row.activity.note.is_empty() {
