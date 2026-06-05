@@ -7,10 +7,12 @@
 //! * [`followup`] — the BK1 / BK2 / C1 follow-up checklist per ABO.
 //! * [`todo`] — a task, optionally tied to a contact, with a due date and done flag.
 //! * [`advance`] — an advance payment fronted to buy products for a contact, collected back later.
+//! * [`meeting`] — a meeting/event plus per-contact attendance (RSVP, fee paid, actual attendance).
 
 pub mod activity;
 pub mod advance;
 pub mod contact;
 pub mod enums;
 pub mod followup;
+pub mod meeting;
 pub mod todo;
