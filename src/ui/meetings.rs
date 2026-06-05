@@ -243,27 +243,53 @@ fn cell_widget(
     let cur_paid = cell.is_some_and(|a| a.paid);
     let cur_attended = cell.and_then(|a| a.attended);
 
-    let resp = match cell {
+    // The status dot and the ✓/✗ marks are painted as shapes rather than text:
+    // ● ✓ ✗ are absent from egui's bundled font subset and render as tofu boxes.
+    // 💵 *is* in the emoji subset, so it is painted as text.
+    let green = egui::Color32::from_rgb(0x2E, 0x7D, 0x32);
+    let red = egui::Color32::from_rgb(0xD3, 0x2F, 0x2F);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(66.0, 22.0), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let painter = ui.painter_at(rect);
+    let cy = rect.center().y;
+    match cell {
         Some(a) => {
-            let mut text = String::from("●");
+            let mut x = rect.left() + 11.0;
+            painter.circle_filled(egui::pos2(x, cy), 6.0, status_color(a.status));
+            x += 18.0;
             if m.fee > 0 && a.paid {
-                text.push_str(" 💵");
+                painter.text(
+                    egui::pos2(x, cy),
+                    egui::Align2::CENTER_CENTER,
+                    "💵",
+                    egui::FontId::proportional(13.0),
+                    green,
+                );
+                x += 17.0;
             }
             match a.attended {
-                Some(true) => text.push_str(" ✓"),
-                Some(false) => text.push_str(" ✗"),
+                Some(true) => {
+                    let s = egui::Stroke::new(2.0, green);
+                    painter.line_segment([egui::pos2(x - 4.0, cy + 1.0), egui::pos2(x - 1.0, cy + 4.0)], s);
+                    painter.line_segment([egui::pos2(x - 1.0, cy + 4.0), egui::pos2(x + 5.0, cy - 4.0)], s);
+                }
+                Some(false) => {
+                    let s = egui::Stroke::new(2.0, red);
+                    painter.line_segment([egui::pos2(x - 4.0, cy - 4.0), egui::pos2(x + 4.0, cy + 4.0)], s);
+                    painter.line_segment([egui::pos2(x - 4.0, cy + 4.0), egui::pos2(x + 4.0, cy - 4.0)], s);
+                }
                 None => {}
             }
-            ui.add(
-                egui::Label::new(egui::RichText::new(text).color(status_color(a.status)))
-                    .sense(egui::Sense::click()),
-            )
         }
-        None => ui.add(
-            egui::Label::new(egui::RichText::new("·").weak()).sense(egui::Sense::click()),
-        ),
+        None => {
+            // A faint hollow ring marks an empty-but-clickable cell.
+            painter.circle_stroke(
+                egui::pos2(rect.left() + 11.0, cy),
+                5.0,
+                egui::Stroke::new(1.0, egui::Color32::from_gray(0xC0)),
+            );
+        }
     }
-    .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     if resp.clicked() {
         ui.memory_mut(|mm| mm.toggle_popup(popup_id));
