@@ -27,7 +27,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
     let mut open = true;
     let mut add = false;
     let mut close = false;
-    let mut delete_id: Option<i64> = None;
+    let mut delete_req: Option<(i64, String)> = None;
 
     egui::Window::new("ประวัติการติดต่อ / Activity Log")
         .collapsible(false)
@@ -98,7 +98,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                                 ui.label(format!("— {}", a.note));
                             }
                             if ui.small_button("🗑").on_hover_text("ลบ").clicked() {
-                                delete_id = Some(a.id);
+                                delete_req = Some((a.id, a.kind.as_str().to_string()));
                             }
                         });
                     }
@@ -123,10 +123,8 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
             Err(e) => app.set_error(e),
         }
     }
-    if let Some(aid) = delete_id {
-        if let Err(e) = app.db.delete_activity(aid) {
-            app.set_error(e);
-        }
+    if let Some((id, label)) = delete_req {
+        app.pending_delete = Some(crate::ui::confirm::PendingDelete::Activity { id, label });
     }
     if close || !open {
         app.activity_contact = None;
