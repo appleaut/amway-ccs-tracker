@@ -15,7 +15,7 @@ use crate::error::{AppError, Result};
 use crate::models::activity::Activity;
 use crate::models::advance::Advance;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::meeting::Meeting;
+use crate::models::meeting::{Meeting, MeetingAttendee};
 use crate::models::enums::{AttendeeStatus, ContactType, Gender, NetworkCategory, Rank, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use crate::models::todo::Todo;
@@ -1264,6 +1264,113 @@ pub fn list_meetings(conn: &Connection, include_past: bool) -> Result<Vec<Meetin
     }
 }
 
+/// Every attendee cell, keyed by `(meeting_id, contact_id)`. Small enough to
+/// load whole; the matrix page looks up only the cells it renders.
+pub fn attendee_map(conn: &Connection) -> Result<HashMap<(i64, i64), MeetingAttendee>> {
+    let mut stmt = conn
+        .prepare("SELECT meeting_id, contact_id, status, paid, attended FROM meeting_attendees")?;
+    let rows = stmt.query_map([], |row| {
+        let status: String = row.get(2)?;
+        let attended: Option<i64> = row.get(4)?;
+        Ok(MeetingAttendee {
+            meeting_id: row.get(0)?,
+            contact_id: row.get(1)?,
+            status: AttendeeStatus::from_db(&status),
+            paid: row.get::<_, i64>(3)? != 0,
+            attended: attended.map(|v| v != 0),
+        })
+    })?;
+    let mut map = HashMap::new();
+    for r in rows {
+        let a = r?;
+        map.insert((a.meeting_id, a.contact_id), a);
+    }
+    Ok(map)
+}
+
+/// Insert or update one attendee cell. Logs an activity on the two milestone
+/// transitions — both inside one transaction (mirrors `collect_advance`):
+/// status becoming `Attending`, and `attended` becoming `true` — each only when
+/// the prior state was different, so repeated writes don't spam the history.
+pub fn upsert_attendee(
+    conn: &Connection,
+    meeting_id: i64,
+    contact_id: i64,
+    status: AttendeeStatus,
+    paid: bool,
+    attended: Option<bool>,
+) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+
+    let prior: Option<(String, Option<i64>)> = tx
+        .query_row(
+            "SELECT status, attended FROM meeting_attendees WHERE meeting_id = ?1 AND contact_id = ?2",
+            params![meeting_id, contact_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let was_attending = prior
+        .as_ref()
+        .is_some_and(|(s, _)| AttendeeStatus::from_db(s) == AttendeeStatus::Attending);
+    let was_attended = prior.as_ref().and_then(|(_, a)| *a).is_some_and(|v| v != 0);
+
+    let now = Local::now().to_rfc3339();
+    tx.execute(
+        "INSERT INTO meeting_attendees
+            (meeting_id, contact_id, status, paid, attended, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+         ON CONFLICT(meeting_id, contact_id) DO UPDATE SET
+            status = ?3, paid = ?4, attended = ?5, updated_at = ?6",
+        params![
+            meeting_id,
+            contact_id,
+            status.as_str(),
+            paid as i64,
+            attended.map(|b| b as i64),
+            now,
+        ],
+    )?;
+
+    if status == AttendeeStatus::Attending && !was_attending {
+        let name: String =
+            tx.query_row("SELECT name FROM meetings WHERE id = ?1", [meeting_id], |r| r.get(0))?;
+        tx.execute(
+            "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                contact_id,
+                MEETING_RSVP_KIND,
+                format!("ตอบรับเข้าร่วม: {name}"),
+                Local::now().to_rfc3339()
+            ],
+        )?;
+    }
+    if attended == Some(true) && !was_attended {
+        let name: String =
+            tx.query_row("SELECT name FROM meetings WHERE id = ?1", [meeting_id], |r| r.get(0))?;
+        tx.execute(
+            "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                contact_id,
+                MEETING_ATTENDED_KIND,
+                format!("เข้าร่วมงานจริง: {name}"),
+                Local::now().to_rfc3339()
+            ],
+        )?;
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+/// Remove a contact from a meeting (the cell returns to empty).
+pub fn remove_attendee(conn: &Connection, meeting_id: i64, contact_id: i64) -> Result<()> {
+    conn.execute(
+        "DELETE FROM meeting_attendees WHERE meeting_id = ?1 AND contact_id = ?2",
+        params![meeting_id, contact_id],
+    )?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard aggregates
 // ---------------------------------------------------------------------------
@@ -2162,5 +2269,117 @@ mod tests {
             list_meetings(&conn, false).unwrap().into_iter().map(|m| m.name).collect();
         assert_eq!(upcoming, vec!["จบวันนี้", "อนาคต"]); // past excluded; ordered by start_date
         assert_eq!(list_meetings(&conn, true).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn upsert_attendee_inserts_then_updates_single_row() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ก")).unwrap();
+        let mid = add_meeting(&conn, "สัมมนา", d("2026-07-01"), d("2026-07-01"), "", 500).unwrap();
+
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Undecided, false, None).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, true, Some(true)).unwrap();
+
+        let map = attendee_map(&conn).unwrap();
+        let a = map.get(&(mid, cid)).unwrap();
+        assert_eq!(a.status, AttendeeStatus::Attending);
+        assert!(a.paid);
+        assert_eq!(a.attended, Some(true));
+
+        let n: i64 =
+            conn.query_row("SELECT COUNT(*) FROM meeting_attendees", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1, "upsert must not duplicate the (meeting, contact) row");
+    }
+
+    #[test]
+    fn upsert_attendee_attended_null_round_trips() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ข")).unwrap();
+        let mid = add_meeting(&conn, "งาน", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Undecided, false, None).unwrap();
+        assert_eq!(attendee_map(&conn).unwrap().get(&(mid, cid)).unwrap().attended, None);
+    }
+
+    #[test]
+    fn upsert_attendee_logs_attending_once() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ธ")).unwrap();
+        let mid = add_meeting(&conn, "งานA", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Undecided, false, None).unwrap();
+        assert_eq!(list_activities(&conn, cid).unwrap().len(), 0);
+
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
+        let acts = list_activities(&conn, cid).unwrap();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].kind, MEETING_RSVP_KIND);
+        assert_eq!(acts[0].note, "ตอบรับเข้าร่วม: งานA");
+
+        // Staying attending (e.g. ticking paid) logs nothing more.
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, true, None).unwrap();
+        assert_eq!(list_activities(&conn, cid).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn upsert_attendee_logs_attended_once() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("น")).unwrap();
+        let mid = add_meeting(&conn, "งานB", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap(); // 1 rsvp
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, Some(true)).unwrap(); // +1 attended
+
+        let acts = list_activities(&conn, cid).unwrap();
+        assert_eq!(acts.len(), 2);
+        assert!(acts.iter().any(|a| a.kind == MEETING_ATTENDED_KIND && a.note == "เข้าร่วมงานจริง: งานB"));
+
+        // Re-recording came, or recording no-show/clear, logs nothing more.
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, Some(true)).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, Some(false)).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
+        assert_eq!(list_activities(&conn, cid).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn upsert_attendee_can_create_undecided_walk_in() {
+        // The matrix records a walk-in by upserting status Undecided + attended.
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("วอล์ค")).unwrap();
+        let mid = add_meeting(&conn, "งานC", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Undecided, false, Some(true)).unwrap();
+        let a = attendee_map(&conn).unwrap().get(&(mid, cid)).unwrap().clone();
+        assert_eq!(a.status, AttendeeStatus::Undecided);
+        assert_eq!(a.attended, Some(true));
+        assert_eq!(list_activities(&conn, cid).unwrap()[0].kind, MEETING_ATTENDED_KIND);
+    }
+
+    #[test]
+    fn remove_attendee_clears_the_cell() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ล")).unwrap();
+        let mid = add_meeting(&conn, "งานD", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
+        remove_attendee(&conn, mid, cid).unwrap();
+        assert!(attendee_map(&conn).unwrap().get(&(mid, cid)).is_none());
+    }
+
+    #[test]
+    fn delete_meeting_cascades_attendees() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ม")).unwrap();
+        let mid = add_meeting(&conn, "งานE", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
+        delete_meeting(&conn, mid).unwrap();
+        assert!(attendee_map(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn delete_contact_cascades_attendees() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ค")).unwrap();
+        let mid = add_meeting(&conn, "งานF", d("2026-07-01"), d("2026-07-01"), "", 0).unwrap();
+        upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
+        delete_contact(&conn, cid).unwrap();
+        assert!(attendee_map(&conn).unwrap().is_empty());
     }
 }
