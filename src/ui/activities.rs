@@ -92,7 +92,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     }
 
     let mut open_contact: Option<i64> = None;
-    let mut delete_id: Option<i64> = None;
+    let mut delete_req: Option<(i64, String)> = None;
 
     // The รายละเอียด column wraps long notes, so each row must be tall enough to
     // show every wrapped line. Resolve the body font and one-line height now,
@@ -206,7 +206,9 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                             open_contact = Some(row.contact_id);
                         }
                         if ui.small_button("🗑").on_hover_text("ลบรายการนี้").clicked() {
-                            delete_id = Some(row.activity.id);
+                            let label =
+                                format!("{} — {}", row.contact_name, row.activity.kind.as_str());
+                            delete_req = Some((row.activity.id, label));
                         }
                     });
                 });
@@ -217,10 +219,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
         app.activity_contact = Some(cid);
         app.activity_note.clear();
     }
-    if let Some(aid) = delete_id {
-        match app.db.delete_activity(aid) {
-            Ok(()) => app.set_status("ลบประวัติแล้ว"),
-            Err(e) => app.set_error(e),
-        }
+    if let Some((id, label)) = delete_req {
+        app.pending_delete = Some(crate::ui::confirm::PendingDelete::Activity { id, label });
     }
 }
