@@ -7,6 +7,7 @@
 pub mod queries;
 pub mod schema;
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use chrono::NaiveDate;
@@ -17,8 +18,9 @@ use crate::error::Result;
 use crate::models::activity::Activity;
 use crate::models::advance::Advance;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
-use crate::models::enums::{ContactType, SponsorStep};
+use crate::models::enums::{AttendeeStatus, ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
+use crate::models::meeting::{Meeting, MeetingAttendee};
 use crate::models::todo::Todo;
 use queries::{AboRow, ActivityKindRow, ActivityLogRow, AdvanceRow, CustomerRow, ProspectRow, TodoRow};
 
@@ -209,6 +211,44 @@ impl DbConnection {
     }
     pub fn outstanding_total(&self) -> Result<i64> {
         queries::outstanding_total(&self.conn)
+    }
+
+    // --- meetings ---------------------------------------------------------
+
+    pub fn add_meeting(
+        &self,
+        name: &str,
+        start: NaiveDate,
+        end: NaiveDate,
+        description: &str,
+        fee: i64,
+    ) -> Result<i64> {
+        queries::add_meeting(&self.conn, name, start, end, description, fee)
+    }
+    pub fn update_meeting(&self, m: &Meeting) -> Result<()> {
+        queries::update_meeting(&self.conn, m)
+    }
+    pub fn delete_meeting(&self, id: i64) -> Result<()> {
+        queries::delete_meeting(&self.conn, id)
+    }
+    pub fn list_meetings(&self, include_past: bool) -> Result<Vec<Meeting>> {
+        queries::list_meetings(&self.conn, include_past)
+    }
+    pub fn attendee_map(&self) -> Result<HashMap<(i64, i64), MeetingAttendee>> {
+        queries::attendee_map(&self.conn)
+    }
+    pub fn upsert_attendee(
+        &self,
+        meeting_id: i64,
+        contact_id: i64,
+        status: AttendeeStatus,
+        paid: bool,
+        attended: Option<bool>,
+    ) -> Result<()> {
+        queries::upsert_attendee(&self.conn, meeting_id, contact_id, status, paid, attended)
+    }
+    pub fn remove_attendee(&self, meeting_id: i64, contact_id: i64) -> Result<()> {
+        queries::remove_attendee(&self.conn, meeting_id, contact_id)
     }
 
     // --- aggregates / table rows -----------------------------------------
