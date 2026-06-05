@@ -8,7 +8,7 @@ use rusqlite::{params, Connection};
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 9;
+const CURRENT_VERSION: i64 = 10;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -210,6 +210,45 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute(
             "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
             params![crate::db::queries::ADVANCE_COLLECTED_KIND],
+        )?;
+    }
+
+    if version < 10 {
+        // Meetings/events and per-contact attendance. Both FKs cascade: an
+        // attendance cell is meaningless without its meeting and contact, so it
+        // is removed when either is deleted (unlike advances/todos).
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meetings (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL,
+                start_date  TEXT    NOT NULL,
+                end_date    TEXT    NOT NULL,
+                description TEXT    NOT NULL DEFAULT '',
+                fee         INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT    NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS meeting_attendees (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                meeting_id INTEGER NOT NULL REFERENCES meetings(id)  ON DELETE CASCADE,
+                contact_id INTEGER NOT NULL REFERENCES contacts(id)  ON DELETE CASCADE,
+                status     TEXT    NOT NULL,
+                paid       INTEGER NOT NULL DEFAULT 0,
+                attended   INTEGER,
+                created_at TEXT    NOT NULL,
+                updated_at TEXT    NOT NULL,
+                UNIQUE(meeting_id, contact_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_attendees_meeting ON meeting_attendees(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_attendees_contact ON meeting_attendees(contact_id);",
+        )?;
+        // Seed the two activity kinds logged from the matrix.
+        conn.execute(
+            "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
+            params![crate::db::queries::MEETING_RSVP_KIND],
+        )?;
+        conn.execute(
+            "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
+            params![crate::db::queries::MEETING_ATTENDED_KIND],
         )?;
     }
 
