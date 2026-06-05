@@ -102,6 +102,8 @@ pub struct AppState {
     pub advance_form: crate::ui::advances::AdvanceForm,
     /// Status filter on the Advance Payments page.
     pub advance_status_filter: crate::ui::advances::AdvanceStatusFilter,
+    /// Add/edit meeting modal state.
+    pub meeting_form: crate::ui::meeting_form::MeetingForm,
 }
 
 impl AppState {
@@ -158,6 +160,7 @@ impl AppState {
             advance_collect_note: String::new(),
             advance_form: crate::ui::advances::AdvanceForm::default(),
             advance_status_filter: crate::ui::advances::AdvanceStatusFilter::Outstanding,
+            meeting_form: crate::ui::meeting_form::MeetingForm::default(),
         })
     }
 
@@ -394,6 +397,7 @@ impl eframe::App for AppState {
         ui::confirm::render(self, ctx);
         ui::todo_done::render(self, ctx);
         ui::advance_collect::render(self, ctx);
+        ui::meeting_form::render(self, ctx);
         ui::rank_advisor::render(self, ctx);
         ui::rank_advisor::render_me(self, ctx);
         ui::activity_log::render(self, ctx);
