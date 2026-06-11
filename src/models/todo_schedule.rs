@@ -36,7 +36,9 @@ impl Recurrence {
     /// for an unknown kind or an out-of-range value.
     pub fn from_db(kind: &str, value: i64) -> Option<Recurrence> {
         match kind {
-            "EveryNDays" if value >= 1 => Some(Recurrence::EveryNDays(value as u32)),
+            "EveryNDays" if (1..=u32::MAX as i64).contains(&value) => {
+                Some(Recurrence::EveryNDays(value as u32))
+            }
             "MonthlyDay" if (1..=31).contains(&value) => Some(Recurrence::MonthlyDay(value as u32)),
             _ => None,
         }
@@ -68,6 +70,9 @@ impl Recurrence {
                 Some(start + Duration::days(k * n))
             }
             Recurrence::MonthlyDay(d) => {
+                if today < start {
+                    return None;
+                }
                 let this = occ_in_month(today.year(), today.month(), *d);
                 let occ = if this <= today {
                     this
@@ -257,5 +262,34 @@ mod tests {
         assert_eq!(Recurrence::from_db("EveryNDays", 0), None);
         assert_eq!(Recurrence::from_db("MonthlyDay", 32), None);
         assert_eq!(Recurrence::from_db("Bogus", 5), None);
+    }
+
+    #[test]
+    fn monthly_day_with_start_day_after_target_day() {
+        // Schedule starts Jun 20 but fires on the 15th: June's 15th predates the
+        // start, so the first real occurrence is Jul 15.
+        let r = Recurrence::MonthlyDay(15);
+        let start = d("2026-06-20");
+        assert_eq!(r.latest_occurrence_on_or_before(start, d("2026-06-25")), None);
+        assert_eq!(
+            r.latest_occurrence_on_or_before(start, d("2026-07-20")),
+            Some(d("2026-07-15"))
+        );
+    }
+
+    #[test]
+    fn monthly_day_next_occurrence_rolls_over_year() {
+        let r = Recurrence::MonthlyDay(15);
+        let start = d("2026-01-15");
+        assert_eq!(r.next_occurrence_after(start, d("2026-12-20")), d("2027-01-15"));
+    }
+
+    #[test]
+    fn from_db_rejects_overflowing_every_n_days() {
+        assert_eq!(Recurrence::from_db("EveryNDays", (u32::MAX as i64) + 1), None);
+        assert_eq!(
+            Recurrence::from_db("EveryNDays", u32::MAX as i64),
+            Some(Recurrence::EveryNDays(u32::MAX))
+        );
     }
 }
