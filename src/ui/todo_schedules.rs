@@ -71,7 +71,7 @@ impl TodoScheduleForm {
         if self.monthly {
             Recurrence::MonthlyDay(self.month_day.clamp(1, 31) as u32)
         } else {
-            Recurrence::EveryNDays(self.every_n_days.max(1) as u32)
+            Recurrence::EveryNDays(self.every_n_days.clamp(1, 365) as u32)
         }
     }
 
