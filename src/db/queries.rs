@@ -1110,6 +1110,47 @@ pub fn list_todo_schedules(conn: &Connection) -> Result<Vec<TodoScheduleRow>> {
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
+/// Materialize any due cycles into `todos`. For each schedule whose latest
+/// occurrence on or before `today` is newer than its `last_generated`, insert
+/// one todo (due on that occurrence) and advance `last_generated` — both in one
+/// transaction. Missed cycles collapse into a single todo. Returns how many
+/// todos were created.
+pub fn generate_due_todos(conn: &Connection, today: NaiveDate) -> Result<usize> {
+    // Collect first so the prepared statement's borrow is released before we
+    // start the per-schedule transactions below.
+    let schedules: Vec<TodoSchedule> = {
+        let sql = format!("SELECT {SCHED_COLS} FROM todo_schedules s");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], row_to_schedule)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    let mut created = 0usize;
+    for s in &schedules {
+        let Some(occ) = s.recurrence.latest_occurrence_on_or_before(s.start_date, today) else {
+            continue;
+        };
+        let already = s.last_generated.is_some_and(|lg| occ <= lg);
+        if already {
+            continue;
+        }
+        let occ_str = occ.format("%Y-%m-%d").to_string();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO todos (contact_id, task, due_date, done, created_at)
+             VALUES (?1, ?2, ?3, 0, ?4)",
+            params![s.contact_id, s.task, occ_str, Local::now().to_rfc3339()],
+        )?;
+        tx.execute(
+            "UPDATE todo_schedules SET last_generated = ?1 WHERE id = ?2",
+            params![occ_str, s.id],
+        )?;
+        tx.commit()?;
+        created += 1;
+    }
+    Ok(created)
+}
+
 // ---------------------------------------------------------------------------
 // Advances
 // ---------------------------------------------------------------------------
@@ -2572,5 +2613,65 @@ mod tests {
         let rows = list_todo_schedules(&conn).unwrap();
         assert_eq!(rows.len(), 1, "schedule survives contact deletion");
         assert_eq!(rows[0].schedule.contact_id, None);
+    }
+
+    #[test]
+    fn migration_creates_todo_schedules_table() {
+        let conn = mem();
+        // An empty list (rather than an error) proves the table exists.
+        assert!(list_todo_schedules(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_creates_one_todo_when_due() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "งานรายสัปดาห์", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        // Day 8 → occurrence 2026-06-08 is due.
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.task, "งานรายสัปดาห์");
+        assert_eq!(todos[0].todo.due_date, Some(d("2026-06-08")));
+        assert!(!todos[0].todo.done);
+    }
+
+    #[test]
+    fn generate_is_idempotent_same_day() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        // Running again the same day creates nothing (last_generated guard).
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 0);
+        assert_eq!(list_todos(&conn, "").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn generate_collapses_missed_cycles_to_one() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        // Three cycles passed (8th, 15th, 22nd) but only one todo is created,
+        // due on the most recent occurrence (22nd).
+        assert_eq!(generate_due_todos(&conn, d("2026-06-23")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.due_date, Some(d("2026-06-22")));
+    }
+
+    #[test]
+    fn generate_skips_future_start() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-07-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-23")).unwrap(), 0);
+        assert!(list_todos(&conn, "").unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_creates_next_todo_on_later_cycle() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        // A later run after the next cycle creates a second todo.
+        assert_eq!(generate_due_todos(&conn, d("2026-06-15")).unwrap(), 1);
+        assert_eq!(list_todos(&conn, "").unwrap().len(), 2);
     }
 }
