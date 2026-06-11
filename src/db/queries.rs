@@ -19,6 +19,7 @@ use crate::models::meeting::{Meeting, MeetingAttendee};
 use crate::models::enums::{AttendeeStatus, ContactType, Gender, NetworkCategory, Rank, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use crate::models::todo::Todo;
+use crate::models::todo_schedule::{Recurrence, TodoSchedule};
 use crate::utils::scoring;
 
 /// The 14 contact columns, qualified with the `c` alias so queries can join
@@ -973,6 +974,181 @@ pub fn count_due_soon_todos(conn: &Connection, days: i64) -> Result<i64> {
         ],
         |r| r.get(0),
     )?)
+}
+
+// ---------------------------------------------------------------------------
+// Todo schedules (recurring tasks)
+// ---------------------------------------------------------------------------
+
+/// A schedule joined with its contact (name + type), for the management table.
+pub struct TodoScheduleRow {
+    pub schedule: TodoSchedule,
+    pub contact_name: Option<String>,
+    pub contact_type: Option<ContactType>,
+}
+
+/// The eight schedule columns, in the order the row mappers below expect.
+const SCHED_COLS: &str =
+    "s.id, s.contact_id, s.task, s.freq_kind, s.freq_value, s.start_date, s.last_generated, s.created_at";
+
+/// Map the first eight columns (in `SCHED_COLS` order) into a `TodoSchedule`.
+/// A corrupt cadence falls back to `EveryNDays(1)` (we only ever write valid
+/// rows, so this is defensive — it keeps the mapper infallible).
+fn row_to_schedule(row: &Row) -> rusqlite::Result<TodoSchedule> {
+    let kind: String = row.get(3)?;
+    let value: i64 = row.get(4)?;
+    let start: String = row.get(5)?;
+    let last: Option<String> = row.get(6)?;
+    let created: String = row.get(7)?;
+    Ok(TodoSchedule {
+        id: row.get(0)?,
+        contact_id: row.get(1)?,
+        task: row.get(2)?,
+        recurrence: Recurrence::from_db(&kind, value).unwrap_or(Recurrence::EveryNDays(1)),
+        start_date: NaiveDate::parse_from_str(&start, "%Y-%m-%d")
+            .unwrap_or_else(|_| Local::now().date_naive()),
+        last_generated: last.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()),
+        created_at: parse_dt(&created),
+    })
+}
+
+/// Map a row of `SCHED_COLS` + (c.name, c.nickname, c.contact_type) into a row.
+fn row_to_schedule_row(row: &Row) -> rusqlite::Result<TodoScheduleRow> {
+    let schedule = row_to_schedule(row)?;
+    let name: Option<String> = row.get(8)?;
+    let nickname: Option<String> = row.get(9)?;
+    let ctype: Option<String> = row.get(10)?;
+    let contact_name = name.map(|n| match nickname {
+        Some(nk) if !nk.is_empty() => format!("{n} ({nk})"),
+        _ => n,
+    });
+    Ok(TodoScheduleRow {
+        schedule,
+        contact_name,
+        contact_type: ctype.map(|s| ContactType::from_db(&s)),
+    })
+}
+
+/// Validate the shared fields of an add/update. `task` is trimmed; the cadence
+/// values must be in range.
+fn validate_schedule(task: &str, recurrence: Recurrence) -> Result<()> {
+    if task.trim().is_empty() {
+        return Err(AppError::validation("กรุณากรอกสิ่งที่ต้องทำ"));
+    }
+    match recurrence {
+        Recurrence::EveryNDays(n) if n < 1 => {
+            Err(AppError::validation("จำนวนวันต้องมากกว่า 0"))
+        }
+        Recurrence::MonthlyDay(d) if !(1..=31).contains(&d) => {
+            Err(AppError::validation("วันที่ของเดือนต้องอยู่ระหว่าง 1–31"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Add a schedule; returns the new id. `task` is trimmed and must be non-empty.
+pub fn add_todo_schedule(
+    conn: &Connection,
+    contact_id: Option<i64>,
+    task: &str,
+    recurrence: Recurrence,
+    start_date: NaiveDate,
+) -> Result<i64> {
+    validate_schedule(task, recurrence)?;
+    conn.execute(
+        "INSERT INTO todo_schedules
+            (contact_id, task, freq_kind, freq_value, start_date, last_generated, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+        params![
+            contact_id,
+            task.trim(),
+            recurrence.kind_str(),
+            recurrence.value(),
+            start_date.format("%Y-%m-%d").to_string(),
+            Local::now().to_rfc3339(),
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Update a schedule's contact, task, cadence, and start date (not
+/// `last_generated` / `created_at`).
+pub fn update_todo_schedule(conn: &Connection, s: &TodoSchedule) -> Result<()> {
+    validate_schedule(&s.task, s.recurrence)?;
+    conn.execute(
+        "UPDATE todo_schedules
+            SET contact_id = ?1, task = ?2, freq_kind = ?3, freq_value = ?4, start_date = ?5
+          WHERE id = ?6",
+        params![
+            s.contact_id,
+            s.task.trim(),
+            s.recurrence.kind_str(),
+            s.recurrence.value(),
+            s.start_date.format("%Y-%m-%d").to_string(),
+            s.id,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Delete a schedule (does not touch any todos it already created).
+pub fn delete_todo_schedule(conn: &Connection, id: i64) -> Result<()> {
+    conn.execute("DELETE FROM todo_schedules WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+/// All schedules joined with their contact, newest first.
+pub fn list_todo_schedules(conn: &Connection) -> Result<Vec<TodoScheduleRow>> {
+    let sql = format!(
+        "SELECT {SCHED_COLS}, c.name, c.nickname, c.contact_type
+         FROM todo_schedules s
+         LEFT JOIN contacts c ON c.id = s.contact_id
+         ORDER BY s.created_at DESC, s.id DESC"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([], row_to_schedule_row)?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Materialize any due cycles into `todos`. For each schedule whose latest
+/// occurrence on or before `today` is newer than its `last_generated`, insert
+/// one todo (due on that occurrence) and advance `last_generated` — both in one
+/// transaction. Missed cycles collapse into a single todo. Returns how many
+/// todos were created.
+pub fn generate_due_todos(conn: &Connection, today: NaiveDate) -> Result<usize> {
+    // Collect first so the prepared statement's borrow is released before we
+    // start the per-schedule transactions below.
+    let schedules: Vec<TodoSchedule> = {
+        let sql = format!("SELECT {SCHED_COLS} FROM todo_schedules s");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map([], row_to_schedule)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    let mut created = 0usize;
+    for s in &schedules {
+        let Some(occ) = s.recurrence.latest_occurrence_on_or_before(s.start_date, today) else {
+            continue;
+        };
+        let already = s.last_generated.is_some_and(|lg| occ <= lg);
+        if already {
+            continue;
+        }
+        let occ_str = occ.format("%Y-%m-%d").to_string();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO todos (contact_id, task, due_date, done, created_at)
+             VALUES (?1, ?2, ?3, 0, ?4)",
+            params![s.contact_id, s.task, occ_str, Local::now().to_rfc3339()],
+        )?;
+        tx.execute(
+            "UPDATE todo_schedules SET last_generated = ?1 WHERE id = ?2",
+            params![occ_str, s.id],
+        )?;
+        tx.commit()?;
+        created += 1;
+    }
+    Ok(created)
 }
 
 // ---------------------------------------------------------------------------
@@ -2385,5 +2561,140 @@ mod tests {
         upsert_attendee(&conn, mid, cid, AttendeeStatus::Attending, false, None).unwrap();
         delete_contact(&conn, cid).unwrap();
         assert!(attendee_map(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn schedule_add_list_update_delete() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("เอ")).unwrap();
+        let id = add_todo_schedule(
+            &conn,
+            Some(cid),
+            "  โทรติดตาม  ",
+            Recurrence::EveryNDays(7),
+            d("2026-06-01"),
+        )
+        .unwrap();
+
+        // Blank task is rejected.
+        assert!(add_todo_schedule(&conn, None, "  ", Recurrence::EveryNDays(7), d("2026-06-01")).is_err());
+
+        let rows = list_todo_schedules(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!(r.schedule.task, "โทรติดตาม"); // trimmed
+        assert_eq!(r.schedule.recurrence, Recurrence::EveryNDays(7));
+        assert_eq!(r.schedule.start_date, d("2026-06-01"));
+        assert_eq!(r.schedule.last_generated, None);
+        assert_eq!(r.contact_name.as_deref(), Some("เอ"));
+
+        // Update cadence + task + start.
+        let mut s = r.schedule.clone();
+        s.task = "โทรติดตามรายเดือน".into();
+        s.recurrence = Recurrence::MonthlyDay(1);
+        s.start_date = d("2026-07-01");
+        update_todo_schedule(&conn, &s).unwrap();
+        let rows = list_todo_schedules(&conn).unwrap();
+        assert_eq!(rows[0].schedule.task, "โทรติดตามรายเดือน");
+        assert_eq!(rows[0].schedule.recurrence, Recurrence::MonthlyDay(1));
+        assert_eq!(rows[0].schedule.start_date, d("2026-07-01"));
+
+        // Delete.
+        delete_todo_schedule(&conn, id).unwrap();
+        assert!(list_todo_schedules(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn schedule_contact_set_null_on_delete() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("บี")).unwrap();
+        add_todo_schedule(&conn, Some(cid), "งาน", Recurrence::EveryNDays(3), d("2026-06-01")).unwrap();
+        delete_contact(&conn, cid).unwrap();
+        let rows = list_todo_schedules(&conn).unwrap();
+        assert_eq!(rows.len(), 1, "schedule survives contact deletion");
+        assert_eq!(rows[0].schedule.contact_id, None);
+    }
+
+    #[test]
+    fn migration_creates_todo_schedules_table() {
+        let conn = mem();
+        // An empty list (rather than an error) proves the table exists.
+        assert!(list_todo_schedules(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_creates_one_todo_when_due() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "งานรายสัปดาห์", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        // Day 8 → occurrence 2026-06-08 is due.
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.task, "งานรายสัปดาห์");
+        assert_eq!(todos[0].todo.due_date, Some(d("2026-06-08")));
+        assert!(!todos[0].todo.done);
+    }
+
+    #[test]
+    fn generate_is_idempotent_same_day() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        // Running again the same day creates nothing (last_generated guard).
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 0);
+        assert_eq!(list_todos(&conn, "").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn generate_collapses_missed_cycles_to_one() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        // Three cycles passed (8th, 15th, 22nd) but only one todo is created,
+        // due on the most recent occurrence (22nd).
+        assert_eq!(generate_due_todos(&conn, d("2026-06-23")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.due_date, Some(d("2026-06-22")));
+    }
+
+    #[test]
+    fn generate_skips_future_start() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-07-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-23")).unwrap(), 0);
+        assert!(list_todos(&conn, "").unwrap().is_empty());
+    }
+
+    #[test]
+    fn generate_creates_next_todo_on_later_cycle() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "x", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        // A later run after the next cycle creates a second todo.
+        assert_eq!(generate_due_todos(&conn, d("2026-06-15")).unwrap(), 1);
+        assert_eq!(list_todos(&conn, "").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn generate_creates_monthly_day_todo() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "รายเดือน", Recurrence::MonthlyDay(1), d("2026-06-01")).unwrap();
+        // On the 8th the latest day-1 occurrence is the 1st.
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.task, "รายเดือน");
+        assert_eq!(todos[0].todo.due_date, Some(d("2026-06-01")));
+    }
+
+    #[test]
+    fn generate_propagates_contact_id() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ซี")).unwrap();
+        add_todo_schedule(&conn, Some(cid), "โทรหา", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.contact_id, Some(cid));
     }
 }

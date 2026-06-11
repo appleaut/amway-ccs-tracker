@@ -108,6 +108,12 @@ pub struct AppState {
     pub meeting_who_filter: crate::ui::meetings::MeetingWhoFilter,
     /// Whether the Meetings matrix also shows meetings that have already finished.
     pub meeting_show_past: bool,
+    /// Recurring-task schedule add/edit form state.
+    pub todo_schedule_form: crate::ui::todo_schedules::TodoScheduleForm,
+    /// Calendar date of the last auto-generation run. Initialised to a sentinel
+    /// in the past so the first `update` frame generates due todos (covering app
+    /// start); thereafter it re-runs whenever the date changes while open.
+    pub last_gen_check: chrono::NaiveDate,
 }
 
 impl AppState {
@@ -167,6 +173,8 @@ impl AppState {
             meeting_form: crate::ui::meeting_form::MeetingForm::default(),
             meeting_who_filter: crate::ui::meetings::MeetingWhoFilter::All,
             meeting_show_past: false,
+            todo_schedule_form: crate::ui::todo_schedules::TodoScheduleForm::default(),
+            last_gen_check: chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
         })
     }
 
@@ -219,6 +227,7 @@ impl AppState {
             (View::FollowUp, "✅  ติดตามผล"),
             (View::Meetings, "🎟  งานประชุม"),
             (View::Todos, "📅  สิ่งที่ต้องทำ"),
+            (View::TodoSchedules, "🔁  ตารางงานประจำ"),
             (View::Advances, "💵  สำรองจ่าย"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Activities, "📝  ประวัติติดต่อ"),
@@ -378,6 +387,15 @@ impl AppState {
 
 impl eframe::App for AppState {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Auto-create due recurring todos on the first frame (covers app start)
+        // and whenever the calendar date changes while the app stays open.
+        let today = chrono::Local::now().date_naive();
+        if today != self.last_gen_check {
+            self.last_gen_check = today;
+            let r = self.db.generate_due_todos(today);
+            let _ = self.handle(r, 0);
+        }
+
         egui::SidePanel::left("nav_panel")
             .resizable(false)
             .exact_width(210.0)
@@ -393,6 +411,7 @@ impl eframe::App for AppState {
             View::FollowUp => ui::followup::render(self, ui),
             View::Meetings => ui::meetings::render(self, ui),
             View::Todos => ui::todo::render(self, ui),
+            View::TodoSchedules => ui::todo_schedules::render(self, ui),
             View::Advances => ui::advances::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
             View::Activities => ui::activities::render(self, ui),

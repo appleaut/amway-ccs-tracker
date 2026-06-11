@@ -22,7 +22,11 @@ use crate::models::enums::{AttendeeStatus, ContactType, SponsorStep};
 use crate::models::followup::FollowUpSheet;
 use crate::models::meeting::{Meeting, MeetingAttendee};
 use crate::models::todo::Todo;
-use queries::{AboRow, ActivityKindRow, ActivityLogRow, AdvanceRow, CustomerRow, ProspectRow, TodoRow};
+use crate::models::todo_schedule::{Recurrence, TodoSchedule};
+use queries::{
+    AboRow, ActivityKindRow, ActivityLogRow, AdvanceRow, CustomerRow, ProspectRow, TodoRow,
+    TodoScheduleRow,
+};
 
 /// Owns the SQLite connection and exposes typed, validated operations.
 pub struct DbConnection {
@@ -179,6 +183,30 @@ impl DbConnection {
     #[allow(dead_code)]
     pub fn count_due_soon_todos(&self, days: i64) -> Result<i64> {
         queries::count_due_soon_todos(&self.conn, days)
+    }
+
+    // --- todo schedules (recurring tasks) ---------------------------------
+
+    pub fn add_todo_schedule(
+        &self,
+        contact_id: Option<i64>,
+        task: &str,
+        recurrence: Recurrence,
+        start_date: NaiveDate,
+    ) -> Result<i64> {
+        queries::add_todo_schedule(&self.conn, contact_id, task, recurrence, start_date)
+    }
+    pub fn update_todo_schedule(&self, s: &TodoSchedule) -> Result<()> {
+        queries::update_todo_schedule(&self.conn, s)
+    }
+    pub fn delete_todo_schedule(&self, id: i64) -> Result<()> {
+        queries::delete_todo_schedule(&self.conn, id)
+    }
+    pub fn list_todo_schedules(&self) -> Result<Vec<TodoScheduleRow>> {
+        queries::list_todo_schedules(&self.conn)
+    }
+    pub fn generate_due_todos(&self, today: NaiveDate) -> Result<usize> {
+        queries::generate_due_todos(&self.conn, today)
     }
 
     // --- advances ---------------------------------------------------------
