@@ -8,7 +8,7 @@ use rusqlite::{params, Connection};
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 10;
+const CURRENT_VERSION: i64 = 11;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -249,6 +249,27 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         conn.execute(
             "INSERT OR IGNORE INTO activity_kinds (name) VALUES (?1)",
             params![crate::db::queries::MEETING_ATTENDED_KIND],
+        )?;
+    }
+
+    if version < 11 {
+        // Recurring task schedules: a template + cadence that auto-creates a
+        // normal todo when a cycle is due. contact_id is nullable + SET NULL so
+        // a schedule survives its contact being deleted (mirrors `todos`).
+        // last_generated is the occurrence date of the most recent todo created
+        // from this schedule (NULL = none yet) — it guards against duplicates.
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS todo_schedules (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                contact_id     INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+                task           TEXT    NOT NULL,
+                freq_kind      TEXT    NOT NULL,
+                freq_value     INTEGER NOT NULL,
+                start_date     TEXT    NOT NULL,
+                last_generated TEXT,
+                created_at     TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_todo_schedules_contact ON todo_schedules(contact_id);",
         )?;
     }
 
