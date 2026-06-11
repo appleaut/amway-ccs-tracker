@@ -15,6 +15,7 @@ pub enum PendingDelete {
     Advance { id: i64, item: String },
     Meeting { id: i64, name: String },
     Activity { id: i64, label: String },
+    TodoSchedule { id: i64, name: String },
 }
 
 pub fn render(app: &mut AppState, ctx: &egui::Context) {
@@ -53,6 +54,10 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         PendingDelete::Activity { label, .. } => {
             (label.clone(), "ประวัติการติดต่อรายการนี้จะถูกลบถาวร".to_string())
         }
+        PendingDelete::TodoSchedule { name, .. } => (
+            name.clone(),
+            "ตารางงานประจำนี้จะถูกลบถาวร (งานที่สร้างไปแล้วยังอยู่)".to_string(),
+        ),
     };
 
     let mut confirm = false;
@@ -95,6 +100,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
             PendingDelete::Advance { id, .. } => app.db.delete_advance(*id),
             PendingDelete::Meeting { id, .. } => app.db.delete_meeting(*id),
             PendingDelete::Activity { id, .. } => app.db.delete_activity(*id),
+            PendingDelete::TodoSchedule { id, .. } => app.db.delete_todo_schedule(*id),
         };
         match result {
             Ok(()) => app.set_status(format!("ลบ \"{name}\" เรียบร้อย")),
