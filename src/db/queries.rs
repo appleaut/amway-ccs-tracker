@@ -2674,4 +2674,27 @@ mod tests {
         assert_eq!(generate_due_todos(&conn, d("2026-06-15")).unwrap(), 1);
         assert_eq!(list_todos(&conn, "").unwrap().len(), 2);
     }
+
+    #[test]
+    fn generate_creates_monthly_day_todo() {
+        let conn = mem();
+        add_todo_schedule(&conn, None, "รายเดือน", Recurrence::MonthlyDay(1), d("2026-06-01")).unwrap();
+        // On the 8th the latest day-1 occurrence is the 1st.
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.task, "รายเดือน");
+        assert_eq!(todos[0].todo.due_date, Some(d("2026-06-01")));
+    }
+
+    #[test]
+    fn generate_propagates_contact_id() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ซี")).unwrap();
+        add_todo_schedule(&conn, Some(cid), "โทรหา", Recurrence::EveryNDays(7), d("2026-06-01")).unwrap();
+        assert_eq!(generate_due_todos(&conn, d("2026-06-08")).unwrap(), 1);
+        let todos = list_todos(&conn, "").unwrap();
+        assert_eq!(todos.len(), 1);
+        assert_eq!(todos[0].todo.contact_id, Some(cid));
+    }
 }
