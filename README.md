@@ -126,3 +126,7 @@ SmartScreen may warn on first run ("More info" -> "Run anyway").
 
 The optional Promotion Downloader feature needs Google Chrome and
 `pip install playwright pillow`; the rest of the app needs nothing extra.
+
+End-user install instructions (Thai) for the generated setup are in
+[`docs/INSTALL.md`](docs/INSTALL.md) — hand that to anyone you give the
+`AmwayCCSTracker-Setup.exe` to.
