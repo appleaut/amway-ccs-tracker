@@ -9,7 +9,10 @@ Invoked by the Amway CCS Tracker app with explicit paths:
 
 Flow:
   1. Open the monthly-promotion listing page.
-  2. Collect every  a.content-card-link*  href (the promotion-item-pages).
+  2. Collect every promotion item-page URL by paging the listing's own JSON API
+     (the page itself only loads the first 10 of N, lazily; paging the API gets
+     them all). Falls back to scrolling + scraping  a.content-card-link*  hrefs
+     if the API can't be used.
   3. On each item page, collect every  img.imageComp-product-gallery*  image
      (highest resolution available).
   4. Download all images into <out-dir> named 0001.jpg, 0002.jpg, ... as one
@@ -121,6 +124,64 @@ def load_and_collect_cards(page) -> list[str]:
     return order
 
 
+# The listing page populates its cards from a paginated JSON API
+#   /api/.../content/promotion_card?...&offset=0&limit=10&includeCount=true
+# returning {"data": [...], "count": <total>}. The page only ever fetches the
+# first page (limit=10) and lazily loads the rest on scroll, which is unreliable
+# — so scraping the rendered DOM misses promotions. We instead capture the page's
+# own API request (URL + headers, so the DataDome cookie and required
+# X-Amway-* / Accept-Language headers come along) and page through it ourselves.
+PROMO_API_MARKER = "promotion_card"
+
+
+def _with_offset(url: str, offset: int) -> str:
+    """Return `url` with its `offset=` query value replaced (or appended),
+    leaving the rest of the (already percent-encoded) URL byte-for-byte intact."""
+    if re.search(r"([?&])offset=\d+", url):
+        return re.sub(r"([?&])offset=\d+", rf"\g<1>offset={offset}", url)
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}offset={offset}"
+
+
+def collect_links_via_api(ctx, api_url: str, headers: dict) -> list[str]:
+    """Page through the promotion_card API and return every promotion item-page
+    URL (absolute), in API order. Returns [] if the API can't be used so the
+    caller can fall back to DOM scraping."""
+    m = re.search(r"[?&]limit=(\d+)", api_url)
+    limit = int(m.group(1)) if m else 10
+    if limit <= 0:
+        limit = 10
+
+    links, seen = [], set()
+    offset, total = 0, None
+    for _ in range(100):  # safety cap (100 * limit rows)
+        try:
+            resp = ctx.request.get(_with_offset(api_url, offset), headers=headers, timeout=60_000)
+        except Exception as e:  # noqa: BLE001 - fall back to scraping on any error
+            log(f"   ! API ผิดพลาด ({e})")
+            break
+        if not resp.ok:
+            log(f"   ! API HTTP {resp.status} ที่ offset={offset}")
+            break
+        data = resp.json()
+        if not isinstance(data, dict):
+            break
+        entries = data.get("data") or []
+        if total is None:
+            total = data.get("count")
+        for e in entries:
+            link = (e.get("link") or {}).get("url") or ""
+            if link:
+                url = urljoin(LISTING_URL, link)
+                if url not in seen:
+                    seen.add(url)
+                    links.append(url)
+        offset += limit
+        if not entries or (total is not None and offset >= total):
+            break
+    return links
+
+
 def best_from_srcset(srcset: str) -> str | None:
     best_url, best_w = None, -1
     for part in srcset.split(","):
@@ -142,7 +203,10 @@ def best_from_srcset(srcset: str) -> str | None:
 
 def collect_gallery_images(page, base_url: str) -> list[str]:
     try:
-        page.wait_for_selector(GALLERY_SELECTOR, timeout=20_000)
+        # Product pages render the gallery almost immediately; a short wait keeps
+        # image-less pages (payment/installment/info entries in the listing) from
+        # each stalling the run for the full timeout.
+        page.wait_for_selector(GALLERY_SELECTOR, timeout=8_000)
     except PWTimeout:
         return []
     raw = page.eval_on_selector_all(
@@ -227,11 +291,29 @@ def run_session(out_dir: Path, profile_dir: str, chrome: str) -> int:
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
+        # Capture the page's own promotion_card API request so we can page through
+        # it ourselves (it carries the DataDome cookie + required headers).
+        api_calls: list[tuple[str, dict]] = []
+
+        def _on_request(req) -> None:
+            if PROMO_API_MARKER in req.url and "offset=" in req.url:
+                api_calls.append((req.url, dict(req.headers)))
+
+        page.on("request", _on_request)
+
         log("Opening promotion listing...")
         page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=60_000)
         wait_for_cards(page)
 
-        links = load_and_collect_cards(page)
+        links: list[str] = []
+        if api_calls:
+            api_url, api_headers = api_calls[0]
+            links = collect_links_via_api(ctx, api_url, api_headers)
+            if links:
+                log(f"Listing via API: {len(links)} promotion(s).")
+        if not links:
+            log("Listing via page scroll (API unavailable).")
+            links = load_and_collect_cards(page)
         log(f"Found {len(links)} promotion item page(s).")
 
         counter = 0
