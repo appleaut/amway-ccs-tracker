@@ -32,6 +32,27 @@ enum Action {
     },
 }
 
+/// Where a metric card navigates when clicked. `Copy` so the card table can be a
+/// plain array we iterate while laying out rows.
+#[derive(Clone, Copy)]
+enum CardNav {
+    View(ui::View),
+    Overdue,
+    DueSoon,
+    Outstanding,
+}
+
+impl CardNav {
+    fn action(self) -> Action {
+        match self {
+            CardNav::View(v) => Action::Go(v),
+            CardNav::Overdue => Action::Overdue,
+            CardNav::DueSoon => Action::DueSoon,
+            CardNav::Outstanding => Action::Outstanding,
+        }
+    }
+}
+
 /// Todos needing attention: unfinished, due on or before `today + days` (covers
 /// both overdue and due-soon), earliest due first, capped to `limit`.
 fn attention_todos(rows: Vec<TodoRow>, today: NaiveDate, days: i64, limit: usize) -> Vec<TodoRow> {
@@ -88,39 +109,37 @@ fn metric_row(app: &mut AppState, ui: &mut egui::Ui, action: &mut Option<Action>
     let r = app.db.outstanding_total();
     let outstanding = app.handle(r, 0);
 
-    ui.horizontal_wrapped(|ui| {
-        if ui::metric_card_clickable(ui, "ผู้มุ่งหวัง (Prospects)", &prospects.to_string(), ACCENT_STRONG)
-            .clicked()
-        {
-            *action = Some(Action::Go(ui::View::Prospects));
-        }
-        if ui::metric_card_clickable(ui, "ลูกค้า VIP (Customers)", &customers.to_string(), GREEN)
-            .clicked()
-        {
-            *action = Some(Action::Go(ui::View::Customers));
-        }
-        if ui::metric_card_clickable(ui, "นักธุรกิจ (ABO)", &abos.to_string(), ORANGE).clicked() {
-            *action = Some(Action::Go(ui::View::Abos));
-        }
-        if ui::metric_card_clickable(ui, "เปลี่ยนสถานะเดือนนี้", &conversions.to_string(), PINK)
-            .clicked()
-        {
-            *action = Some(Action::Go(ui::View::Activities));
-        }
-        if ui::metric_card_clickable(ui, "งานเลยกำหนด (Overdue)", &overdue.to_string(), RED).clicked()
-        {
-            *action = Some(Action::Overdue);
-        }
-        if ui::metric_card_clickable(ui, "งานใกล้ครบกำหนด (7 วัน)", &due_soon.to_string(), AMBER)
-            .clicked()
-        {
-            *action = Some(Action::DueSoon);
-        }
-        let money = format!("{} บาท", group_thousands(outstanding));
-        if ui::metric_card_clickable(ui, "ยอดสำรองจ่ายค้างรับ", &money, INDIGO).clicked() {
-            *action = Some(Action::Outstanding);
-        }
-    });
+    // Frame-based cards don't wrap inside `horizontal_wrapped` (a frame's width
+    // isn't known until after it's placed), so chunk them into rows sized to the
+    // available width ourselves.
+    let cards: [(&str, String, egui::Color32, CardNav); 7] = [
+        ("ผู้มุ่งหวัง (Prospects)", prospects.to_string(), ACCENT_STRONG, CardNav::View(ui::View::Prospects)),
+        ("ลูกค้า VIP (Customers)", customers.to_string(), GREEN, CardNav::View(ui::View::Customers)),
+        ("นักธุรกิจ (ABO)", abos.to_string(), ORANGE, CardNav::View(ui::View::Abos)),
+        ("เปลี่ยนสถานะเดือนนี้", conversions.to_string(), PINK, CardNav::View(ui::View::Activities)),
+        ("งานเลยกำหนด (Overdue)", overdue.to_string(), RED, CardNav::Overdue),
+        ("งานใกล้ครบกำหนด (7 วัน)", due_soon.to_string(), AMBER, CardNav::DueSoon),
+        (
+            "ยอดสำรองจ่ายค้างรับ",
+            format!("{} บาท", group_thousands(outstanding)),
+            INDIGO,
+            CardNav::Outstanding,
+        ),
+    ];
+
+    // Each card is ~182px wide (150 min + 16×2 margin) plus item spacing.
+    let card_w = 200.0;
+    let per_row = ((ui.available_width() / card_w).floor() as usize).max(1);
+    for chunk in cards.chunks(per_row) {
+        ui.horizontal(|ui| {
+            for (title, value, color, nav) in chunk {
+                if ui::metric_card_clickable(ui, title, value, *color).clicked() {
+                    *action = Some(nav.action());
+                }
+            }
+        });
+        ui.add_space(8.0);
+    }
 }
 
 fn attention_panel(
