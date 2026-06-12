@@ -57,6 +57,8 @@ pub struct AppState {
     pub chart_pan: egui::Vec2,
     /// Row awaiting delete confirmation (a contact or an activity type).
     pub pending_delete: Option<ui::confirm::PendingDelete>,
+    /// Backup file the user picked to restore from, awaiting confirmation.
+    pub pending_restore: Option<PathBuf>,
     /// ABO id currently open in the Rank Advisor modal.
     pub rank_advisor: Option<i64>,
     /// Whether the self ("ฉัน / ME") Rank Advisor modal is open.
@@ -156,6 +158,7 @@ impl AppState {
             chart_select_start: None,
             chart_pan: egui::Vec2::ZERO,
             pending_delete: None,
+            pending_restore: None,
             rank_advisor: None,
             me_advisor: false,
             activity_contact: None,
@@ -209,6 +212,44 @@ impl AppState {
         self.last_error = None;
         self.status = Some(msg.into());
         self.last_saved_image = Some(path);
+    }
+
+    /// Restore the database from `src`: drop the live connection so the file is
+    /// unlocked, run the validate→safety-backup→swap, then reopen. On any error,
+    /// reopen the still-intact original so the app always ends with a live
+    /// connection.
+    pub fn perform_restore(&mut self, src: PathBuf) {
+        let now = Local::now().naive_local();
+        let result = (|| -> Result<PathBuf> {
+            let db_file = db_path()?;
+            let backups = backups_dir()?;
+            // Open the scratch DB BEFORE replacing, so a failure here leaves the
+            // real connection intact.
+            let scratch = DbConnection::open(std::path::Path::new(":memory:"))?;
+            let _ = std::mem::replace(&mut self.db, scratch); // drops the real conn
+            let safety = crate::backup::restore_from(&src, &db_file, &backups, now)?;
+            self.db = DbConnection::open(&db_file)?;
+            Ok(safety)
+        })();
+        match result {
+            Ok(safety) => self.set_status(format!(
+                "กู้คืนข้อมูลแล้ว (สำรองเดิมไว้ที่ {})",
+                safety.display()
+            )),
+            Err(e) => {
+                // restore_from leaves the original data.db intact on failure, so
+                // reopen it. If that ALSO fails the app is running on the empty
+                // in-memory scratch — surface that louder than the restore error.
+                self.set_error(e);
+                if let Ok(p) = db_path() {
+                    if let Err(e2) = DbConnection::open(&p).map(|db| self.db = db) {
+                        self.set_error(AppError::validation(format!(
+                            "กู้คืนไม่สำเร็จ และเปิดฐานข้อมูลเดิมไม่ได้: {e2}"
+                        )));
+                    }
+                }
+            }
+        }
     }
 
     /// Unwrap a `Result`, surfacing any error in the status bar and falling back
@@ -350,6 +391,8 @@ impl AppState {
             .small()
             .weak(),
         );
+
+        ui::settings_backup::render(self, ui);
 
         ui.add_space(12.0);
         ui.separator();
@@ -494,6 +537,7 @@ impl eframe::App for AppState {
         // Modals render on top of whatever view is active.
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
+        ui::settings_backup::render_restore_confirm(self, ctx);
         ui::todo_done::render(self, ctx);
         ui::advance_collect::render(self, ctx);
         ui::meeting_form::render(self, ctx);
@@ -595,12 +639,21 @@ fn open_in_os(path: &str) -> Result<()> {
 }
 
 /// Resolve `%APPDATA%\AmwayCCSTracker\data.db`, creating the directory.
-fn db_path() -> Result<PathBuf> {
+pub(crate) fn db_path() -> Result<PathBuf> {
     let base = std::env::var("APPDATA")
         .map_err(|_| AppError::validation("APPDATA environment variable is not set"))?;
     let dir = PathBuf::from(base).join("AmwayCCSTracker");
     std::fs::create_dir_all(&dir)?;
     Ok(dir.join("data.db"))
+}
+
+/// Resolve `%APPDATA%\AmwayCCSTracker\backups`, creating the directory.
+pub(crate) fn backups_dir() -> Result<PathBuf> {
+    let base = std::env::var("APPDATA")
+        .map_err(|_| AppError::validation("APPDATA environment variable is not set"))?;
+    let dir = PathBuf::from(base).join("AmwayCCSTracker").join("backups");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
 }
 
 /// Embed the Kanit Thai font (Regular + Medium) and make it the primary face,
