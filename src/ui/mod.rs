@@ -89,6 +89,7 @@ pub enum View {
 }
 
 /// A rounded "metric" card used on the dashboard.
+#[allow(dead_code)]
 pub fn metric_card(ui: &mut egui::Ui, title: &str, value: &str, accent: egui::Color32) {
     egui::Frame::group(ui.style())
         .rounding(8.0)
