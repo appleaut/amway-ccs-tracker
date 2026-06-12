@@ -188,6 +188,9 @@ impl DbConnection {
     pub fn complete_todo(&self, id: i64, result: &str) -> Result<()> {
         queries::complete_todo(&self.conn, id, result)
     }
+    pub fn complete_todo_to_contact(&self, id: i64, contact_id: i64, result: &str) -> Result<()> {
+        queries::complete_todo_to_contact(&self.conn, id, contact_id, result)
+    }
     pub fn delete_todo(&self, id: i64) -> Result<()> {
         queries::delete_todo(&self.conn, id)
     }
