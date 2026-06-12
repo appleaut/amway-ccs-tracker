@@ -9,6 +9,7 @@ mod app;
 mod db;
 mod error;
 mod models;
+mod promo;
 mod ui;
 mod utils;
 
