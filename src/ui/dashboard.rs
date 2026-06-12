@@ -269,20 +269,22 @@ fn apply_action(app: &mut AppState, action: Action) {
             task,
             contact_id,
             contact_name,
-        } => match (contact_id, contact_name) {
-            (Some(_), Some(name)) => {
-                app.pending_todo_done = Some(crate::ui::todo_done::PendingTodoDone {
-                    id,
-                    task,
-                    contact_name: name,
-                });
-                app.todo_done_result.clear();
-            }
-            _ => match app.db.set_todo_done(id, true) {
-                Ok(()) => app.set_status("ทำงานเสร็จแล้ว"),
-                Err(e) => app.set_error(e),
-            },
-        },
+        } => {
+            // Open the Log Result dialog. Linked -> read-only contact;
+            // contactless -> contact picker. (Mirrors the Todo page.)
+            let contact_name = match (contact_id, contact_name) {
+                (Some(_), Some(name)) => Some(name),
+                _ => None,
+            };
+            app.pending_todo_done = Some(crate::ui::todo_done::PendingTodoDone {
+                id,
+                task,
+                contact_name,
+            });
+            app.todo_done_result.clear();
+            app.todo_done_contact_id = None;
+            app.todo_done_contact_filter.clear();
+        }
     }
 }
 

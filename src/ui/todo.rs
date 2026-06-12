@@ -381,26 +381,21 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                     app.set_error(e);
                 }
             } else if let Some(row) = rows.iter().find(|r| r.todo.id == id) {
-                match (row.todo.contact_id, &row.contact_name) {
-                    (Some(_), Some(name)) => {
-                        // open the result dialog; completion is deferred until "บันทึก"
-                        app.pending_todo_done = Some(crate::ui::todo_done::PendingTodoDone {
-                            id,
-                            task: row.todo.task.clone(),
-                            contact_name: name.clone(),
-                        });
-                        app.todo_done_result.clear();
-                    }
-                    _ => {
-                        // no contact: mark done now, nothing to log
-                        if let Err(e) = app.db.set_todo_done(id, true) {
-                            app.set_error(e);
-                        }
-                        app.set_status(
-                            "ทำเครื่องหมายเสร็จแล้ว — งานนี้ไม่มีรายชื่อ จึงไม่บันทึกลงประวัติ",
-                        );
-                    }
-                }
+                // Open the Log Result dialog. A contact-linked todo shows its
+                // contact read-only; a contactless todo shows a contact picker.
+                // Completion is deferred until "บันทึก".
+                let contact_name = match (row.todo.contact_id, &row.contact_name) {
+                    (Some(_), Some(name)) => Some(name.clone()),
+                    _ => None,
+                };
+                app.pending_todo_done = Some(crate::ui::todo_done::PendingTodoDone {
+                    id,
+                    task: row.todo.task.clone(),
+                    contact_name,
+                });
+                app.todo_done_result.clear();
+                app.todo_done_contact_id = None;
+                app.todo_done_contact_filter.clear();
             }
         }
         if let Some(id) = edit_req {

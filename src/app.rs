@@ -94,6 +94,11 @@ pub struct AppState {
     pub pending_todo_done: Option<crate::ui::todo_done::PendingTodoDone>,
     /// Result-text buffer for the todo-completion dialog.
     pub todo_done_result: String,
+    /// Contact picked in the todo-completion dialog when the todo is contactless;
+    /// the result is logged to this contact. `None` = log no history.
+    pub todo_done_contact_id: Option<i64>,
+    /// Search-filter buffer for the contactless todo-completion contact picker.
+    pub todo_done_contact_filter: String,
     /// An advance whose collect-action is awaiting its date + note (drives the
     /// `ui::advance_collect` modal); `None` when no collect dialog is open.
     pub pending_advance_collect: Option<crate::ui::advance_collect::PendingAdvanceCollect>,
@@ -176,6 +181,8 @@ impl AppState {
             todo_who_filter: crate::ui::todo::TodoWhoFilter::All,
             pending_todo_done: None,
             todo_done_result: String::new(),
+            todo_done_contact_id: None,
+            todo_done_contact_filter: String::new(),
             pending_advance_collect: None,
             advance_collect_date: chrono::Local::now().date_naive(),
             advance_collect_note: String::new(),
