@@ -25,19 +25,20 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
         return;
     };
 
-    // Contact options for the contactless picker, fetched once so the
-    // filter_combo closure doesn't borrow app.db while mutating picker state.
-    // Empty for a contact-linked todo (no picker shown).
-    let contact_options: Vec<(i64, String)> = if pending.contact_name.is_none() {
-        app.db
-            .list_contacts()
-            .unwrap_or_default()
-            .iter()
-            .map(|c| (c.id, format!("{} · {}", c.display_name(), c.contact_type.label_th())))
-            .collect()
+    // Contacts for the contactless picker, fetched once so the filter_combo
+    // closure doesn't borrow app.db while mutating picker state. Empty for a
+    // contact-linked todo (no picker shown). `contact_options` drives the
+    // picker (with a type suffix to disambiguate); `contacts` is also kept so
+    // the success toast can show the chosen contact's plain display name.
+    let contacts = if pending.contact_name.is_none() {
+        app.db.list_contacts().unwrap_or_default()
     } else {
         Vec::new()
     };
+    let contact_options: Vec<(i64, String)> = contacts
+        .iter()
+        .map(|c| (c.id, format!("{} · {}", c.display_name(), c.contact_type.label_th())))
+        .collect();
 
     let mut save = false;
     let mut cancel = false;
@@ -114,10 +115,7 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
                 let logged_name: Option<String> = match &pending.contact_name {
                     Some(name) => Some(name.clone()),
                     None => app.todo_done_contact_id.and_then(|cid| {
-                        contact_options
-                            .iter()
-                            .find(|(id, _)| *id == cid)
-                            .map(|(_, label)| label.clone())
+                        contacts.iter().find(|c| c.id == cid).map(|c| c.display_name())
                     }),
                 };
                 match logged_name {
