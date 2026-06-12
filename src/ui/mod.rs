@@ -88,28 +88,7 @@ pub enum View {
     Settings,
 }
 
-/// A rounded "metric" card used on the dashboard.
-#[allow(dead_code)]
-pub fn metric_card(ui: &mut egui::Ui, title: &str, value: &str, accent: egui::Color32) {
-    egui::Frame::group(ui.style())
-        .rounding(8.0)
-        .inner_margin(16.0)
-        .show(ui, |ui| {
-            ui.set_min_width(150.0);
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(title).size(13.0).weak());
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(value)
-                        .size(30.0)
-                        .strong()
-                        .color(accent),
-                );
-            });
-        });
-}
-
-/// Like [`metric_card`] but the whole card is clickable; returns the click
+/// A rounded, clickable "metric" card for the dashboard; returns the click
 /// response so the caller can navigate on click.
 pub fn metric_card_clickable(
     ui: &mut egui::Ui,
