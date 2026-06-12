@@ -169,23 +169,12 @@ def ext_for(url: str, content_type: str | None) -> str:
     return ".jpg"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--profile-dir", required=True)
-    ap.add_argument("--chrome", default=DEFAULT_CHROME)
-    a = ap.parse_args()
-
-    out_dir = Path(a.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    Path(a.profile_dir).mkdir(parents=True, exist_ok=True)
-    clean_numbered(out_dir)
-    log(f"Output folder: {out_dir}")
-
+def run_session(out_dir: Path, profile_dir: str, chrome: str) -> int:
+    """Drive the browser and download all gallery images; return the count saved."""
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
-            user_data_dir=a.profile_dir,
-            executable_path=a.chrome,
+            user_data_dir=profile_dir,
+            executable_path=chrome,
             headless=False,
             viewport={"width": 1366, "height": 900},
             args=["--disable-blink-features=AutomationControlled"],
@@ -229,6 +218,34 @@ def main() -> int:
                     log(f"   ! error downloading {img_url}: {e}")
 
         ctx.close()
+    return counter
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--profile-dir", required=True)
+    ap.add_argument("--chrome", default=DEFAULT_CHROME)
+    a = ap.parse_args()
+
+    out_dir = Path(a.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    Path(a.profile_dir).mkdir(parents=True, exist_ok=True)
+    clean_numbered(out_dir)
+    log(f"Output folder: {out_dir}")
+
+    try:
+        counter = run_session(out_dir, a.profile_dir, a.chrome)
+    except PWTimeout:
+        print(
+            "หมดเวลารอโหลดโปรโมชัน — อาจมีหน้า CAPTCHA ที่ยังไม่ได้ยืนยันในหน้าต่าง Chrome",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+    except Exception as e:  # noqa: BLE001 - surface a concise reason, no traceback
+        print(f"ดาวน์โหลดล้มเหลว: {e}", file=sys.stderr, flush=True)
+        return 1
 
     log(f"Done. {counter} image(s) saved to {out_dir}")
     log(f"__RESULT__ saved={counter} dir={out_dir}")
