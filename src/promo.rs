@@ -90,7 +90,7 @@ fn materialize_script(dir: &Path) -> Result<PathBuf> {
 fn find_python() -> Result<String> {
     for prog in ["py", "python", "python3"] {
         let ok = Command::new(prog)
-            .args(["-c", "import playwright"])
+            .args(["-c", "import playwright, PIL"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -101,7 +101,7 @@ fn find_python() -> Result<String> {
         }
     }
     Err(AppError::validation(
-        "ไม่พบ Python ที่ติดตั้ง Playwright — ติดตั้งด้วยคำสั่ง: pip install playwright",
+        "ไม่พบ Python ที่ติดตั้ง Playwright/Pillow — ติดตั้งด้วยคำสั่ง: pip install playwright pillow",
     ))
 }
 
