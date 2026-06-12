@@ -900,6 +900,30 @@ pub fn complete_todo(conn: &Connection, id: i64, result: &str) -> Result<()> {
     Ok(())
 }
 
+/// Mark a todo done AND log a `TODO_DONE_KIND` activity against the GIVEN
+/// contact — both in one transaction. Used when a *contactless* todo is
+/// completed with a contact picked in the Log Result dialog. The todo's own
+/// `contact_id` is left unchanged (the task stays contactless); only the chosen
+/// contact's history gains an entry. Distinct from `complete_todo`, which logs
+/// against the todo's own `contact_id`.
+pub fn complete_todo_to_contact(
+    conn: &Connection,
+    id: i64,
+    contact_id: i64,
+    result: &str,
+) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("UPDATE todos SET done = 1 WHERE id = ?1", [id])?;
+    let task: String =
+        tx.query_row("SELECT task FROM todos WHERE id = ?1", [id], |r| r.get(0))?;
+    tx.execute(
+        "INSERT INTO activities (contact_id, kind, note, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![contact_id, TODO_DONE_KIND, done_note(&task, result), Local::now().to_rfc3339()],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Delete a task.
 pub fn delete_todo(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM todos WHERE id = ?1", [id])?;
@@ -2193,6 +2217,40 @@ mod tests {
         complete_todo(&conn, tid, "ครั้งที่สอง").unwrap();
 
         assert_eq!(list_activities(&conn, cid).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn complete_todo_to_contact_logs_to_chosen_contact() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ปรีชา")).unwrap();
+        // contactless todo (contact_id = None)
+        let tid = add_todo(&conn, None, "โทรนัด", None).unwrap();
+
+        complete_todo_to_contact(&conn, tid, cid, "ลูกค้าตอบรับ").unwrap();
+
+        // todo is marked done
+        assert!(list_todos(&conn, "").unwrap().iter().find(|r| r.todo.id == tid).unwrap().todo.done);
+
+        // exactly one activity logged on the chosen contact, same format as complete_todo
+        let acts = list_activities(&conn, cid).unwrap();
+        assert_eq!(acts.len(), 1);
+        assert_eq!(acts[0].kind, TODO_DONE_KIND);
+        assert_eq!(acts[0].note, "โทรนัด — ผล: ลูกค้าตอบรับ");
+    }
+
+    #[test]
+    fn complete_todo_to_contact_leaves_task_contactless() {
+        let conn = mem();
+        let cid = insert_contact(&conn, &sample_prospect("ปรีชา")).unwrap();
+        let tid = add_todo(&conn, None, "งาน", None).unwrap();
+
+        complete_todo_to_contact(&conn, tid, cid, "").unwrap();
+
+        // the task's own contact_id is untouched (still contactless)
+        let rows = list_todos(&conn, "").unwrap();
+        assert_eq!(rows.iter().find(|r| r.todo.id == tid).unwrap().todo.contact_id, None);
+        // task is also marked done
+        assert!(rows.iter().find(|r| r.todo.id == tid).unwrap().todo.done);
     }
 
     #[test]
