@@ -440,7 +440,19 @@ impl eframe::App for AppState {
                         self.set_error(reason);
                         finished = true;
                     }
-                    Err(_) => break,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // Worker ended without a terminal message (e.g. it
+                        // panicked) — don't wedge the button/spinner forever.
+                        if self.promo_running {
+                            self.promo_running = false;
+                            self.promo_last_result =
+                                Some("ผิดพลาด: การดาวน์โหลดสิ้นสุดผิดปกติ".to_string());
+                            self.set_error("การดาวน์โหลดสิ้นสุดผิดปกติ");
+                        }
+                        finished = true;
+                        break;
+                    }
                 }
             }
             if !finished {
