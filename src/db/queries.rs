@@ -2249,6 +2249,8 @@ mod tests {
         // the task's own contact_id is untouched (still contactless)
         let rows = list_todos(&conn, "").unwrap();
         assert_eq!(rows.iter().find(|r| r.todo.id == tid).unwrap().todo.contact_id, None);
+        // task is also marked done
+        assert!(rows.iter().find(|r| r.todo.id == tid).unwrap().todo.done);
     }
 
     #[test]
