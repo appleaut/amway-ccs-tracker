@@ -21,7 +21,8 @@ Thai UI labels throughout; English code identifiers.
 | Image export | `png` 0.17 (network chart → PNG)         |
 | Target       | `x86_64-pc-windows-msvc`                 |
 
-No async runtime, no network calls, no installer — a single ~6 MB `.exe`.
+No async runtime — a single self-contained `~6 MB` `.exe`. A Windows installer is
+also available (see *Building the Windows installer* below).
 
 ## Build & run
 

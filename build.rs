@@ -12,7 +12,7 @@ fn main() {
         res.set("LegalCopyright", "Copyright (C) 2026 Amway CCS Tracker");
         // ProductVersion / FileVersion default from CARGO_PKG_VERSION.
         if let Err(e) = res.compile() {
-            eprintln!("cargo:warning=winresource failed to embed exe resources: {e}");
+            println!("cargo:warning=winresource failed to embed exe resources: {e}");
             std::process::exit(1);
         }
     }
