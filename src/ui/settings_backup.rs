@@ -44,10 +44,7 @@ fn backup(app: &mut AppState) {
         return; // cancelled
     };
     match app.db.backup_to(&path) {
-        Ok(()) => app.set_saved_image(
-            format!("สำรองข้อมูลแล้ว: {}", path.display()),
-            path.display().to_string(),
-        ),
+        Ok(()) => app.set_status(format!("สำรองข้อมูลแล้ว: {}", path.display())),
         Err(e) => app.set_error(e),
     }
 }
