@@ -137,10 +137,13 @@ pub fn start_download(out_dir: PathBuf) -> Receiver<PromoMsg> {
 
             // Drain stderr concurrently so a chatty child can't deadlock on a
             // full stderr pipe while we read stdout.
-            let stderr = child
-                .stderr
-                .take()
-                .ok_or_else(|| AppError::validation("อ่าน output ไม่ได้"))?;
+            let stderr = match child.stderr.take() {
+                Some(s) => s,
+                None => {
+                    let _ = child.kill();
+                    return Err(AppError::validation("อ่าน output ไม่ได้"));
+                }
+            };
             let err_tx = tx_run.clone();
             let err_handle = std::thread::spawn(move || {
                 let mut reader = BufReader::new(stderr);
@@ -152,10 +155,13 @@ pub fn start_download(out_dir: PathBuf) -> Receiver<PromoMsg> {
                 buf.trim().to_string()
             });
 
-            let stdout = child
-                .stdout
-                .take()
-                .ok_or_else(|| AppError::validation("อ่าน output ไม่ได้"))?;
+            let stdout = match child.stdout.take() {
+                Some(s) => s,
+                None => {
+                    let _ = child.kill();
+                    return Err(AppError::validation("อ่าน output ไม่ได้"));
+                }
+            };
             let mut result: Option<(usize, String)> = None;
             let mut tail: Vec<String> = Vec::new();
             for line in BufReader::new(stdout).lines() {
@@ -170,7 +176,13 @@ pub fn start_download(out_dir: PathBuf) -> Receiver<PromoMsg> {
                     }
                 }
             }
-            let status = child.wait()?;
+            let status = match child.wait() {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = child.kill();
+                    return Err(e.into());
+                }
+            };
             let err_tail = err_handle.join().unwrap_or_default();
             match result {
                 Some(r) if status.success() => Ok(r),
@@ -215,6 +227,14 @@ mod tests {
         let (n, dir) = parse_result_line(line).unwrap();
         assert_eq!(n, 22);
         assert_eq!(dir, r"C:\Users\Aut\Downloads\amway-promotion-2026-06");
+    }
+
+    #[test]
+    fn parse_result_line_dir_with_spaces() {
+        let line = r"__RESULT__ saved=3 dir=C:\Users\John Smith\Downloads\amway-promotion-2026-06";
+        let (n, dir) = parse_result_line(line).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(dir, r"C:\Users\John Smith\Downloads\amway-promotion-2026-06");
     }
 
     #[test]
