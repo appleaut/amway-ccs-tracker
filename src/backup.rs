@@ -71,21 +71,23 @@ pub fn restore_from(
     std::fs::create_dir_all(backups_dir)?;
     let safety = backups_dir.join(format!("pre-restore-{}.db", now.format("%Y%m%d-%H%M%S")));
     {
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
         let safety_str = safety
             .to_str()
             .ok_or_else(|| AppError::validation("เส้นทางไฟล์สำรองไม่ถูกต้อง"))?;
         conn.execute("VACUUM INTO ?1", params![safety_str])?;
     } // connection dropped here, releasing the file
 
-    // 3. Atomic swap: copy to a temp file beside data.db, then rename over it.
-    //    std::fs::rename replaces the destination atomically on Windows.
-    let dir = db_path
-        .parent()
-        .ok_or_else(|| AppError::validation("ไม่พบโฟลเดอร์ฐานข้อมูล"))?;
-    let tmp = dir.join("data.db.restore-tmp");
+    // 3. Swap: copy to a temp file beside the database, then rename over it.
+    //    On Windows std::fs::rename replaces the destination (MoveFileEx with
+    //    REPLACE_EXISTING). Same-volume rename keeps the window tiny; clean up the
+    //    temp file if the rename fails so a stale copy isn't left behind.
+    let tmp = db_path.with_extension("restore-tmp");
     std::fs::copy(src, &tmp)?;
-    std::fs::rename(&tmp, db_path)?;
+    if let Err(e) = std::fs::rename(&tmp, db_path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
 
     Ok(safety)
 }
@@ -197,6 +199,8 @@ mod tests {
         assert!(err.is_err());
         // Live DB untouched.
         assert!(contact_names(&live).contains(&"ข้อมูลเดิม".to_string()));
+        // Validation fails before any safety-backup, so backups_dir is untouched.
+        assert!(!backups.exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
