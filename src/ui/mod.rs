@@ -18,6 +18,7 @@ pub mod forms;
 pub mod meeting_form;
 pub mod meetings;
 pub mod promo_download;
+pub mod settings_backup;
 pub mod prospect_list;
 pub mod rank_advisor;
 pub mod todo;

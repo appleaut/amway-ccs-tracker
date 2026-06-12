@@ -392,6 +392,8 @@ impl AppState {
             .weak(),
         );
 
+        ui::settings_backup::render(self, ui);
+
         ui.add_space(12.0);
         ui.separator();
         ui.add_space(8.0);
@@ -535,6 +537,7 @@ impl eframe::App for AppState {
         // Modals render on top of whatever view is active.
         ui::forms::render(self, ctx);
         ui::confirm::render(self, ctx);
+        ui::settings_backup::render_restore_confirm(self, ctx);
         ui::todo_done::render(self, ctx);
         ui::advance_collect::render(self, ctx);
         ui::meeting_form::render(self, ctx);
