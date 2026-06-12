@@ -105,3 +105,23 @@ Copyright 2026 appleaut. Released under the **PolyForm Noncommercial License
 Bundled third-party components keep their own licences and are unaffected: the
 **Kanit** font under the SIL Open Font License (`assets/fonts/OFL.txt`), and the
 Rust dependencies under their respective (mostly MIT / Apache-2.0) terms.
+
+## Building the Windows installer
+
+One-time: install Inno Setup 6 (`winget install JRSoftware.InnoSetup`).
+
+Then from the repo root:
+
+```powershell
+./build_installer.ps1
+```
+
+This builds the release binary and produces `dist\AmwayCCSTracker-Setup.exe` — a
+per-user installer (no admin prompt) that installs to
+`%LOCALAPPDATA%\Programs\AmwayCCSTracker`, adds Start Menu / optional Desktop
+shortcuts, and registers an uninstaller. Uninstalling leaves your data
+(`%APPDATA%\AmwayCCSTracker`) intact. The installer is unsigned, so Windows
+SmartScreen may warn on first run ("More info" -> "Run anyway").
+
+The optional Promotion Downloader feature needs Google Chrome and
+`pip install playwright pillow`; the rest of the app needs nothing extra.

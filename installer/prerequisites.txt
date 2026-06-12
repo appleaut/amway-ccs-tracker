@@ -1,0 +1,11 @@
+Amway CCS Tracker runs as-is - no extra software is required to use the app,
+manage contacts, meetings, to-dos, advances, and backups.
+
+The optional "Promotion Downloader" feature additionally requires:
+
+  - Google Chrome (installed normally), and
+  - Python 3 with two packages:
+        pip install playwright pillow
+
+If those are not present, every other part of the app still works; only the
+promotion download button will report the missing prerequisite.
