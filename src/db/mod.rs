@@ -53,8 +53,12 @@ impl DbConnection {
     /// refuses a pre-existing destination, so an existing `dest` (the OS Save
     /// dialog already got the user's overwrite consent) is removed first.
     pub fn backup_to(&self, dest: &Path) -> Result<()> {
-        if dest.exists() {
-            std::fs::remove_file(dest)?;
+        // Remove any existing destination (VACUUM INTO refuses a pre-existing
+        // file). Unconditional + ignore-NotFound avoids a TOCTOU race.
+        if let Err(e) = std::fs::remove_file(dest) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(e.into());
+            }
         }
         let dest_str = dest.to_str().ok_or_else(|| {
             AppError::validation("เส้นทางไฟล์ไม่ถูกต้อง (มีอักขระที่ไม่รองรับ)")
@@ -352,6 +356,11 @@ mod tests {
             .map(|c| c.name)
             .collect();
         assert!(names.contains(&"สมหญิง".to_string()));
+        drop(restored); // release the file handle before overwriting (Windows)
+
+        // Backing up again over the now-existing destination must succeed
+        // (exercises the pre-existing-file removal branch).
+        db.backup_to(&copy).unwrap();
 
         let _ = std::fs::remove_file(&live);
         let _ = std::fs::remove_file(&copy);
