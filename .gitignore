@@ -9,3 +9,6 @@
 *.db
 *.db-journal
 *.sqlite
+
+# Python bytecode cache (from the embedded promo-downloader script)
+__pycache__/

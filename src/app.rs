@@ -114,6 +114,14 @@ pub struct AppState {
     /// in the past so the first `update` frame generates due todos (covering app
     /// start); thereafter it re-runs whenever the date changes while open.
     pub last_gen_check: chrono::NaiveDate,
+    /// Promotion-downloader: whether a background run is in progress.
+    pub promo_running: bool,
+    /// Channel from the download worker thread (`None` when idle).
+    pub promo_rx: Option<std::sync::mpsc::Receiver<crate::promo::PromoMsg>>,
+    /// Streamed progress lines, capped to the most recent ~200.
+    pub promo_log: Vec<String>,
+    /// Summary of the last finished run (success or error), shown in the view.
+    pub promo_last_result: Option<String>,
 }
 
 impl AppState {
@@ -175,6 +183,10 @@ impl AppState {
             meeting_show_past: false,
             todo_schedule_form: crate::ui::todo_schedules::TodoScheduleForm::default(),
             last_gen_check: chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap(),
+            promo_running: false,
+            promo_rx: None,
+            promo_log: Vec::new(),
+            promo_last_result: None,
         })
     }
 
@@ -219,6 +231,9 @@ impl AppState {
         ui.separator();
         ui.add_space(6.0);
 
+        // Scroll the nav items (and the add button) so every entry stays
+        // reachable on short windows where the list would otherwise overflow.
+        egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
         let items = [
             (View::Dashboard, "🏠  แดชบอร์ด"),
             (View::Prospects, "🎯  ผู้มุ่งหวัง"),
@@ -229,6 +244,7 @@ impl AppState {
             (View::Todos, "📅  สิ่งที่ต้องทำ"),
             (View::TodoSchedules, "🔁  ตารางงานประจำ"),
             (View::Advances, "💵  สำรองจ่าย"),
+            (View::PromoDownload, "🖼  ดาวน์โหลดโปรโมชัน"),
             (View::Network, "🌳  เครือข่าย"),
             (View::Activities, "📝  ประวัติติดต่อ"),
             (View::ActivityKinds, "📋  ประเภทกิจกรรม"),
@@ -253,6 +269,7 @@ impl AppState {
         {
             self.form = ContactForm::for_new();
         }
+        });
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
@@ -327,9 +344,11 @@ impl AppState {
         ui.separator();
         ui.add_space(8.0);
         ui.label(
-            egui::RichText::new("ข้อมูลถูกบันทึกในเครื่อง (Local SQLite) ไม่มีการเชื่อมต่อเครือข่าย")
-                .small()
-                .weak(),
+            egui::RichText::new(
+                "ข้อมูลรายชื่อถูกบันทึกในเครื่อง (Local SQLite) • ตัวดาวน์โหลดโปรโมชันจะเชื่อมต่อ amway.co.th เฉพาะตอนสั่งงานเท่านั้น",
+            )
+            .small()
+            .weak(),
         );
 
         ui.add_space(12.0);
@@ -396,6 +415,58 @@ impl eframe::App for AppState {
             let _ = self.handle(r, 0);
         }
 
+        // Drain promotion-download progress from the worker thread. Take the
+        // receiver out so we can mutate `self` while processing messages; put it
+        // back unless the run finished.
+        if let Some(rx) = self.promo_rx.take() {
+            let mut finished = false;
+            loop {
+                match rx.try_recv() {
+                    Ok(crate::promo::PromoMsg::Line(l)) => {
+                        self.promo_log.push(l);
+                        let n = self.promo_log.len();
+                        if n > 200 {
+                            self.promo_log.drain(0..n - 200);
+                        }
+                    }
+                    Ok(crate::promo::PromoMsg::Done { saved, dir }) => {
+                        self.promo_running = false;
+                        self.promo_last_result = Some(format!("ดาวน์โหลด {saved} รูปแล้ว"));
+                        self.set_saved_image(
+                            format!("ดาวน์โหลดโปรโมชัน {saved} รูปแล้ว"),
+                            dir,
+                        );
+                        finished = true;
+                    }
+                    Ok(crate::promo::PromoMsg::Failed(reason)) => {
+                        self.promo_running = false;
+                        self.promo_last_result = Some(format!("ผิดพลาด: {reason}"));
+                        self.set_error(reason);
+                        finished = true;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        // Worker ended without a terminal message (e.g. it
+                        // panicked) — don't wedge the button/spinner forever.
+                        if self.promo_running {
+                            self.promo_running = false;
+                            self.promo_last_result =
+                                Some("ผิดพลาด: การดาวน์โหลดสิ้นสุดผิดปกติ".to_string());
+                            self.set_error("การดาวน์โหลดสิ้นสุดผิดปกติ");
+                        }
+                        finished = true;
+                        break;
+                    }
+                }
+            }
+            if !finished {
+                self.promo_rx = Some(rx);
+            }
+        }
+        if self.promo_running {
+            ctx.request_repaint();
+        }
+
         egui::SidePanel::left("nav_panel")
             .resizable(false)
             .exact_width(210.0)
@@ -413,6 +484,7 @@ impl eframe::App for AppState {
             View::Todos => ui::todo::render(self, ui),
             View::TodoSchedules => ui::todo_schedules::render(self, ui),
             View::Advances => ui::advances::render(self, ui),
+            View::PromoDownload => ui::promo_download::render(self, ui),
             View::Network => ui::downline_tree::render(self, ui),
             View::Activities => ui::activities::render(self, ui),
             View::ActivityKinds => ui::activity_kinds::render(self, ui),
