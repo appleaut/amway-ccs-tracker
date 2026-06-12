@@ -9,7 +9,10 @@ Invoked by the Amway CCS Tracker app with explicit paths:
 
 Flow:
   1. Open the monthly-promotion listing page.
-  2. Collect every  a.content-card-link*  href (the promotion-item-pages).
+  2. Collect every promotion item-page URL by paging the listing's own JSON API
+     (the page itself only loads the first 10 of N, lazily; paging the API gets
+     them all). Falls back to scrolling + scraping  a.content-card-link*  hrefs
+     if the API can't be used.
   3. On each item page, collect every  img.imageComp-product-gallery*  image
      (highest resolution available).
   4. Download all images into <out-dir> named 0001.jpg, 0002.jpg, ... as one
@@ -41,8 +44,10 @@ DEFAULT_CHROME = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 # How long to wait for the user to clear a DataDome CAPTCHA (seconds).
 CAPTCHA_WAIT = 240
 
-# Files this tool owns and may delete before a fresh run.
-NUMBERED_RE = re.compile(r"^\d{4}\.(jpg|jpeg|png|gif|webp|bmp|avif)$", re.IGNORECASE)
+# Files this tool owns and may delete before a fresh run. Matches any purely
+# numeric image name (0001.jpg, but also 3-/5-digit names left by older tool
+# versions) so a re-run starts from a clean, gap-free 0001 sequence.
+NUMBERED_RE = re.compile(r"^\d{1,6}\.(jpg|jpeg|png|gif|webp|bmp|avif)$", re.IGNORECASE)
 
 
 def log(msg: str) -> None:
@@ -72,30 +77,109 @@ def wait_for_cards(page) -> None:
     page.wait_for_selector(CARD_SELECTOR, timeout=CAPTCHA_WAIT * 1000)
 
 
-def scroll_to_load_all(page) -> None:
-    last = -1
-    for _ in range(30):
-        count = page.locator(CARD_SELECTOR).count()
-        if count == last:
-            break
-        last = count
-        page.mouse.wheel(0, 4000)
-        time.sleep(1.2)
+# Card-collection tuning. The listing lazy-loads promotions in batches as you
+# scroll, so we must (a) collect links progressively — not once at the end, or a
+# batch that scrolls out of view can be missed — and (b) keep scrolling until the
+# count stays unchanged for several consecutive passes, not just one, because a
+# single plateau often means "the next batch hasn't arrived yet", not "done".
+SCROLL_MAX_PASSES = 40       # hard cap on scroll iterations
+SCROLL_STABLE_PASSES = 4     # consecutive no-growth passes before we stop
+SCROLL_MIN_PASSES = 6        # always scroll at least this many times first
+SCROLL_WAIT = 1.5            # seconds to let a batch load after each scroll
+
+
+def load_and_collect_cards(page) -> list[str]:
+    """Scroll the listing to the bottom repeatedly, accumulating every promotion
+    card link as batches load. Returns links in first-seen order.
+
+    Stops once the unique-link count has not grown for `SCROLL_STABLE_PASSES`
+    consecutive passes (after a minimum number of passes), or at the pass cap."""
+    seen, order = set(), []
+
+    def harvest() -> None:
+        hrefs = page.eval_on_selector_all(
+            CARD_SELECTOR,
+            "els => els.map(e => e.getAttribute('href')).filter(Boolean)",
+        )
+        for h in hrefs:
+            url = urljoin(LISTING_URL, h)
+            if url not in seen:
+                seen.add(url)
+                order.append(url)
+
+    stable = 0
+    for i in range(SCROLL_MAX_PASSES):
+        before = len(seen)
+        harvest()
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        time.sleep(SCROLL_WAIT)
+        harvest()
+        if len(seen) == before:
+            stable += 1
+            if stable >= SCROLL_STABLE_PASSES and i + 1 >= SCROLL_MIN_PASSES:
+                break
+        else:
+            stable = 0
     page.evaluate("window.scrollTo(0, 0)")
+    return order
 
 
-def collect_card_links(page) -> list[str]:
-    hrefs = page.eval_on_selector_all(
-        CARD_SELECTOR,
-        "els => els.map(e => e.getAttribute('href')).filter(Boolean)",
-    )
-    seen, out = set(), []
-    for h in hrefs:
-        url = urljoin(LISTING_URL, h)
-        if url not in seen:
-            seen.add(url)
-            out.append(url)
-    return out
+# The listing page populates its cards from a paginated JSON API
+#   /api/.../content/promotion_card?...&offset=0&limit=10&includeCount=true
+# returning {"data": [...], "count": <total>}. The page only ever fetches the
+# first page (limit=10) and lazily loads the rest on scroll, which is unreliable
+# — so scraping the rendered DOM misses promotions. We instead capture the page's
+# own API request (URL + headers, so the DataDome cookie and required
+# X-Amway-* / Accept-Language headers come along) and page through it ourselves.
+PROMO_API_MARKER = "promotion_card"
+
+
+def _with_offset(url: str, offset: int) -> str:
+    """Return `url` with its `offset=` query value replaced (or appended),
+    leaving the rest of the (already percent-encoded) URL byte-for-byte intact."""
+    if re.search(r"([?&])offset=\d+", url):
+        return re.sub(r"([?&])offset=\d+", rf"\g<1>offset={offset}", url)
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}offset={offset}"
+
+
+def collect_links_via_api(ctx, api_url: str, headers: dict) -> list[str]:
+    """Page through the promotion_card API and return every promotion item-page
+    URL (absolute), in API order. Returns [] if the API can't be used so the
+    caller can fall back to DOM scraping."""
+    m = re.search(r"[?&]limit=(\d+)", api_url)
+    limit = int(m.group(1)) if m else 10
+    if limit <= 0:
+        limit = 10
+
+    links, seen = [], set()
+    offset, total = 0, None
+    for _ in range(100):  # safety cap (100 * limit rows)
+        try:
+            resp = ctx.request.get(_with_offset(api_url, offset), headers=headers, timeout=60_000)
+        except Exception as e:  # noqa: BLE001 - fall back to scraping on any error
+            log(f"   ! API ผิดพลาด ({e})")
+            break
+        if not resp.ok:
+            log(f"   ! API HTTP {resp.status} ที่ offset={offset}")
+            break
+        data = resp.json()
+        if not isinstance(data, dict):
+            break
+        entries = data.get("data") or []
+        if total is None:
+            total = data.get("count")
+        for e in entries:
+            link = (e.get("link") or {}).get("url") or ""
+            if link:
+                url = urljoin(LISTING_URL, link)
+                if url not in seen:
+                    seen.add(url)
+                    links.append(url)
+        offset += limit
+        if not entries or (total is not None and offset >= total):
+            break
+    return links
 
 
 def best_from_srcset(srcset: str) -> str | None:
@@ -119,7 +203,10 @@ def best_from_srcset(srcset: str) -> str | None:
 
 def collect_gallery_images(page, base_url: str) -> list[str]:
     try:
-        page.wait_for_selector(GALLERY_SELECTOR, timeout=20_000)
+        # Product pages render the gallery almost immediately; a short wait keeps
+        # image-less pages (payment/installment/info entries in the listing) from
+        # each stalling the run for the full timeout.
+        page.wait_for_selector(GALLERY_SELECTOR, timeout=8_000)
     except PWTimeout:
         return []
     raw = page.eval_on_selector_all(
@@ -140,6 +227,29 @@ def collect_gallery_images(page, base_url: str) -> list[str]:
             seen.add(url)
             out.append(url)
     return out
+
+
+def looks_like_avif(body: bytes) -> bool:
+    """Sniff AVIF by its ISO-BMFF 'ftyp' brand, so we convert correctly even when
+    the URL ends in .jpg / the content-type is wrong."""
+    head = body[:64]
+    return b"ftyp" in head and (b"avif" in head or b"avis" in head)
+
+
+def fetch_image(ctx, url: str, attempts: int = 3):
+    """Fetch an image with a few retries for transient failures. Returns
+    (body, content_type) on success, or (None, None) after exhausting attempts."""
+    for n in range(1, attempts + 1):
+        try:
+            resp = ctx.request.get(url, timeout=60_000)
+            if resp.ok:
+                return resp.body(), resp.headers.get("content-type")
+            log(f"   ! HTTP {resp.status} (ครั้งที่ {n}/{attempts}) {url}")
+        except Exception as e:  # noqa: BLE001 - retry on any transient error
+            log(f"   ! โหลดผิดพลาด (ครั้งที่ {n}/{attempts}): {e}")
+        if n < attempts:
+            time.sleep(1.0)
+    return None, None
 
 
 def avif_to_jpeg(body: bytes) -> bytes:
@@ -181,12 +291,29 @@ def run_session(out_dir: Path, profile_dir: str, chrome: str) -> int:
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
+        # Capture the page's own promotion_card API request so we can page through
+        # it ourselves (it carries the DataDome cookie + required headers).
+        api_calls: list[tuple[str, dict]] = []
+
+        def _on_request(req) -> None:
+            if PROMO_API_MARKER in req.url and "offset=" in req.url:
+                api_calls.append((req.url, dict(req.headers)))
+
+        page.on("request", _on_request)
+
         log("Opening promotion listing...")
         page.goto(LISTING_URL, wait_until="domcontentloaded", timeout=60_000)
         wait_for_cards(page)
-        scroll_to_load_all(page)
 
-        links = collect_card_links(page)
+        links: list[str] = []
+        if api_calls:
+            api_url, api_headers = api_calls[0]
+            links = collect_links_via_api(ctx, api_url, api_headers)
+            if links:
+                log(f"Listing via API: {len(links)} promotion(s).")
+        if not links:
+            log("Listing via page scroll (API unavailable).")
+            links = load_and_collect_cards(page)
         log(f"Found {len(links)} promotion item page(s).")
 
         counter = 0
@@ -200,22 +327,28 @@ def run_session(out_dir: Path, profile_dir: str, chrome: str) -> int:
             images = collect_gallery_images(page, link)
             log(f"   {len(images)} gallery image(s)")
             for img_url in images:
-                try:
-                    resp = ctx.request.get(img_url, timeout=60_000)
-                    if not resp.ok:
-                        log(f"   ! HTTP {resp.status} for {img_url}")
-                        continue
-                    body = resp.body()
-                    ext = ext_for(img_url, resp.headers.get("content-type"))
-                    counter += 1
-                    if ext == ".avif":
+                body, content_type = fetch_image(ctx, img_url)
+                if body is None:
+                    log(f"   ! ข้ามรูป (โหลดไม่สำเร็จหลังลองหลายครั้ง): {img_url}")
+                    continue
+                ext = ext_for(img_url, content_type)
+                if ext == ".avif" or looks_like_avif(body):
+                    try:
                         body = avif_to_jpeg(body)
                         ext = ".jpg"
-                    fname = out_dir / f"{counter:04d}{ext}"
+                    except Exception as e:  # noqa: BLE001 - skip undecodable image
+                        log(f"   ! แปลง avif ไม่สำเร็จ ข้ามรูป: {e}")
+                        continue
+                # Number only after a successful save so failures never leave a
+                # gap in the 0001, 0002, ... sequence.
+                fname = out_dir / f"{counter + 1:04d}{ext}"
+                try:
                     fname.write_bytes(body)
-                    log(f"   saved {fname.name}  ({len(body):,} bytes)")
-                except Exception as e:  # noqa: BLE001 - report and continue
-                    log(f"   ! error downloading {img_url}: {e}")
+                except OSError as e:
+                    log(f"   ! เขียนไฟล์ไม่สำเร็จ ข้ามรูป: {e}")
+                    continue
+                counter += 1
+                log(f"   saved {fname.name}  ({len(body):,} bytes)")
 
         ctx.close()
     return counter
