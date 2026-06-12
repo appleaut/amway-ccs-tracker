@@ -237,13 +237,17 @@ impl AppState {
                 safety.display()
             )),
             Err(e) => {
-                // Ensure a live connection on the original data.db before reporting.
+                // restore_from leaves the original data.db intact on failure, so
+                // reopen it. If that ALSO fails the app is running on the empty
+                // in-memory scratch — surface that louder than the restore error.
+                self.set_error(e);
                 if let Ok(p) = db_path() {
-                    if let Ok(db) = DbConnection::open(&p) {
-                        self.db = db;
+                    if let Err(e2) = DbConnection::open(&p).map(|db| self.db = db) {
+                        self.set_error(AppError::validation(format!(
+                            "กู้คืนไม่สำเร็จ และเปิดฐานข้อมูลเดิมไม่ได้: {e2}"
+                        )));
                     }
                 }
-                self.set_error(e);
             }
         }
     }
