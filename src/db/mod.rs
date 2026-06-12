@@ -12,9 +12,9 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::models::activity::Activity;
 use crate::models::advance::Advance;
 use crate::models::contact::{Contact, CustomerScore, ProspectScore, SponsorFlowStatus};
@@ -46,6 +46,21 @@ impl DbConnection {
         let conn = Connection::open(path)?;
         init(&conn)?;
         Ok(DbConnection { conn })
+    }
+
+    /// Write a clean, compact, consistent copy of the live database to `dest`
+    /// using SQLite `VACUUM INTO`. The connection stays open. `VACUUM INTO`
+    /// refuses a pre-existing destination, so an existing `dest` (the OS Save
+    /// dialog already got the user's overwrite consent) is removed first.
+    pub fn backup_to(&self, dest: &Path) -> Result<()> {
+        if dest.exists() {
+            std::fs::remove_file(dest)?;
+        }
+        let dest_str = dest.to_str().ok_or_else(|| {
+            AppError::validation("เส้นทางไฟล์ไม่ถูกต้อง (มีอักขระที่ไม่รองรับ)")
+        })?;
+        self.conn.execute("VACUUM INTO ?1", params![dest_str])?;
+        Ok(())
     }
 
     // --- contacts ---------------------------------------------------------
@@ -295,5 +310,50 @@ impl DbConnection {
     }
     pub fn list_abo_rows(&self, q: &str) -> Result<Vec<AboRow>> {
         queries::list_abo_rows(&self.conn, q)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::contact::Contact;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// A unique temp path that won't collide across parallel tests (no RNG/clock,
+    /// which are unavailable/forbidden — use pid + a counter).
+    fn temp_path(tag: &str) -> std::path::PathBuf {
+        static N: AtomicU64 = AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "amway_db_test_{}_{}_{}.db",
+            std::process::id(),
+            tag,
+            n
+        ))
+    }
+
+    #[test]
+    fn backup_to_copies_live_data() {
+        let live = temp_path("live");
+        let copy = temp_path("copy");
+
+        let db = DbConnection::open(&live).unwrap();
+        let mut c = Contact::new_blank();
+        c.name = "สมหญิง".to_string();
+        db.insert_contact(&c).unwrap();
+
+        db.backup_to(&copy).unwrap();
+
+        let restored = DbConnection::open(&copy).unwrap();
+        let names: Vec<String> = restored
+            .list_contacts()
+            .unwrap()
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert!(names.contains(&"สมหญิง".to_string()));
+
+        let _ = std::fs::remove_file(&live);
+        let _ = std::fs::remove_file(&copy);
     }
 }
