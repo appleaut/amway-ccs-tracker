@@ -231,6 +231,9 @@ impl AppState {
         ui.separator();
         ui.add_space(6.0);
 
+        // Scroll the nav items (and the add button) so every entry stays
+        // reachable on short windows where the list would otherwise overflow.
+        egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
         let items = [
             (View::Dashboard, "🏠  แดชบอร์ด"),
             (View::Prospects, "🎯  ผู้มุ่งหวัง"),
@@ -266,6 +269,7 @@ impl AppState {
         {
             self.form = ContactForm::for_new();
         }
+        });
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
