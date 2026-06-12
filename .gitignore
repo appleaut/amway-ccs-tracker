@@ -12,3 +12,6 @@
 
 # Python bytecode cache (from the embedded promo-downloader script)
 __pycache__/
+
+# Installer output
+/dist/

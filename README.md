@@ -21,7 +21,8 @@ Thai UI labels throughout; English code identifiers.
 | Image export | `png` 0.17 (network chart → PNG)         |
 | Target       | `x86_64-pc-windows-msvc`                 |
 
-No async runtime, no network calls, no installer — a single ~6 MB `.exe`.
+No async runtime — a single self-contained `~6 MB` `.exe`. A Windows installer is
+also available (see *Building the Windows installer* below).
 
 ## Build & run
 
@@ -105,3 +106,27 @@ Copyright 2026 appleaut. Released under the **PolyForm Noncommercial License
 Bundled third-party components keep their own licences and are unaffected: the
 **Kanit** font under the SIL Open Font License (`assets/fonts/OFL.txt`), and the
 Rust dependencies under their respective (mostly MIT / Apache-2.0) terms.
+
+## Building the Windows installer
+
+One-time: install Inno Setup 6 (`winget install JRSoftware.InnoSetup`).
+
+Then from the repo root:
+
+```powershell
+./build_installer.ps1
+```
+
+This builds the release binary and produces `dist\AmwayCCSTracker-Setup.exe` — a
+per-user installer (no admin prompt) that installs to
+`%LOCALAPPDATA%\Programs\AmwayCCSTracker`, adds Start Menu / optional Desktop
+shortcuts, and registers an uninstaller. Uninstalling leaves your data
+(`%APPDATA%\AmwayCCSTracker`) intact. The installer is unsigned, so Windows
+SmartScreen may warn on first run ("More info" -> "Run anyway").
+
+The optional Promotion Downloader feature needs Google Chrome and
+`pip install playwright pillow`; the rest of the app needs nothing extra.
+
+End-user install instructions (Thai) for the generated setup are in
+[`docs/INSTALL.md`](docs/INSTALL.md) — hand that to anyone you give the
+`AmwayCCSTracker-Setup.exe` to.

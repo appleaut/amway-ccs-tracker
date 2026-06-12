@@ -958,10 +958,7 @@ pub fn count_overdue_todos(conn: &Connection) -> Result<i64> {
 }
 
 /// Count unfinished todos due between today and today+`days` (inclusive).
-///
-/// Reserved for a planned "due soon" dashboard card; kept (and tested) so the
-/// card can be added without re-deriving the query.
-#[allow(dead_code)]
+/// Backs the dashboard's "due soon" card.
 pub fn count_due_soon_todos(conn: &Connection, days: i64) -> Result<i64> {
     let today = Local::now().date_naive();
     let until = today + chrono::Duration::days(days);

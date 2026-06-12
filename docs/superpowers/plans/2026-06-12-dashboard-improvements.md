@@ -1,3 +1,39 @@
+# Dashboard Improvements Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rework the Dashboard into an at-a-glance hub: seven clickable metric cards, two actionable panels (tasks needing attention + upcoming meetings), and a tidy goals section — using existing data only.
+
+**Architecture:** Rewrite `src/ui/dashboard.rs` into focused private section functions plus one pure, unit-tested helper (`attention_todos`). Clicks are collected into a deferred `Action` applied after layout (so `app` is never mutated mid-borrow). No DB-layer changes except removing a now-unneeded `#[allow(dead_code)]`.
+
+**Tech Stack:** Rust, eframe/egui 0.28, chrono.
+
+**Conventions for every task:**
+- This repo is **hand-formatted** — NEVER run `cargo fmt`. Verify with `cargo build` / `cargo test`.
+- Every commit message must end with: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`
+- Work from `D:\Projects\amway\space-to-grow\amway_ccs_tracker` on branch `dashboard-improvements`.
+
+---
+
+### Task 1: Rewrite `dashboard.rs` (cards, panels, goals, helper + tests)
+
+**Files:**
+- Replace: `src/ui/dashboard.rs` (whole file)
+- Modify: `src/db/mod.rs` (remove the `#[allow(dead_code)]` on `count_due_soon_todos`)
+
+Context you need (all already exist):
+- `DbConnection` methods: `count_by_type(ContactType)`, `count_conversions_this_month()`, `count_overdue_todos()`, `count_due_soon_todos(i64)`, `outstanding_total()`, `list_todos(&str) -> Vec<TodoRow>`, `list_meetings(false) -> Vec<Meeting>`, `set_todo_done(i64, bool)`.
+- `app.handle(result, default)` returns the value or logs the error and returns `default`.
+- `ui::metric_card_clickable(ui, title, value, color) -> egui::Response`.
+- `crate::db::queries::{group_thousands, TodoRow}` — `TodoRow { todo: Todo, contact_name: Option<String>, contact_type: Option<ContactType> }` (NOT `Clone`).
+- `Todo { id, contact_id: Option<i64>, task, due_date: Option<NaiveDate>, done, created_at }`.
+- `Meeting { id, name, start_date: NaiveDate, end_date: NaiveDate, description, fee, created_at }`.
+- Filters: `ui::todo::{TodoStatusFilter::{Overdue,Pending}, TodoWhoFilter::All}`, `ui::advances::AdvanceStatusFilter::Outstanding`.
+- Completion modal: `app.pending_todo_done = Some(crate::ui::todo_done::PendingTodoDone { id, task, contact_name }); app.todo_done_result.clear();`.
+
+- [ ] **Step 1: Replace `src/ui/dashboard.rs` with this exact content**
+
+```rust
 //! Dashboard: at-a-glance metrics, the tasks/meetings that need attention, and
 //! progress toward goals. Clicks are collected into a deferred `Action` and
 //! applied after layout so `app` is never mutated while a closure borrows it.
@@ -30,27 +66,6 @@ enum Action {
         contact_id: Option<i64>,
         contact_name: Option<String>,
     },
-}
-
-/// Where a metric card navigates when clicked. `Copy` so the card table can be a
-/// plain array we iterate while laying out rows.
-#[derive(Clone, Copy)]
-enum CardNav {
-    View(ui::View),
-    Overdue,
-    DueSoon,
-    Outstanding,
-}
-
-impl CardNav {
-    fn action(self) -> Action {
-        match self {
-            CardNav::View(v) => Action::Go(v),
-            CardNav::Overdue => Action::Overdue,
-            CardNav::DueSoon => Action::DueSoon,
-            CardNav::Outstanding => Action::Outstanding,
-        }
-    }
 }
 
 /// Todos needing attention: unfinished, due on or before `today + days` (covers
@@ -109,37 +124,39 @@ fn metric_row(app: &mut AppState, ui: &mut egui::Ui, action: &mut Option<Action>
     let r = app.db.outstanding_total();
     let outstanding = app.handle(r, 0);
 
-    // Frame-based cards don't wrap inside `horizontal_wrapped` (a frame's width
-    // isn't known until after it's placed), so chunk them into rows sized to the
-    // available width ourselves.
-    let cards: [(&str, String, egui::Color32, CardNav); 7] = [
-        ("ผู้มุ่งหวัง (Prospects)", prospects.to_string(), ACCENT_STRONG, CardNav::View(ui::View::Prospects)),
-        ("ลูกค้า VIP (Customers)", customers.to_string(), GREEN, CardNav::View(ui::View::Customers)),
-        ("นักธุรกิจ (ABO)", abos.to_string(), ORANGE, CardNav::View(ui::View::Abos)),
-        ("เปลี่ยนสถานะเดือนนี้", conversions.to_string(), PINK, CardNav::View(ui::View::Activities)),
-        ("งานเลยกำหนด (Overdue)", overdue.to_string(), RED, CardNav::Overdue),
-        ("งานใกล้ครบกำหนด (7 วัน)", due_soon.to_string(), AMBER, CardNav::DueSoon),
-        (
-            "ยอดสำรองจ่ายค้างรับ",
-            format!("{} บาท", group_thousands(outstanding)),
-            INDIGO,
-            CardNav::Outstanding,
-        ),
-    ];
-
-    // Each card is ~182px wide (150 min + 16×2 margin) plus item spacing.
-    let card_w = 200.0;
-    let per_row = ((ui.available_width() / card_w).floor() as usize).max(1);
-    for chunk in cards.chunks(per_row) {
-        ui.horizontal(|ui| {
-            for (title, value, color, nav) in chunk {
-                if ui::metric_card_clickable(ui, title, value, *color).clicked() {
-                    *action = Some(nav.action());
-                }
-            }
-        });
-        ui.add_space(8.0);
-    }
+    ui.horizontal_wrapped(|ui| {
+        if ui::metric_card_clickable(ui, "ผู้มุ่งหวัง (Prospects)", &prospects.to_string(), ACCENT_STRONG)
+            .clicked()
+        {
+            *action = Some(Action::Go(ui::View::Prospects));
+        }
+        if ui::metric_card_clickable(ui, "ลูกค้า VIP (Customers)", &customers.to_string(), GREEN)
+            .clicked()
+        {
+            *action = Some(Action::Go(ui::View::Customers));
+        }
+        if ui::metric_card_clickable(ui, "นักธุรกิจ (ABO)", &abos.to_string(), ORANGE).clicked() {
+            *action = Some(Action::Go(ui::View::Abos));
+        }
+        if ui::metric_card_clickable(ui, "เปลี่ยนสถานะเดือนนี้", &conversions.to_string(), PINK)
+            .clicked()
+        {
+            *action = Some(Action::Go(ui::View::Activities));
+        }
+        if ui::metric_card_clickable(ui, "งานเลยกำหนด (Overdue)", &overdue.to_string(), RED).clicked()
+        {
+            *action = Some(Action::Overdue);
+        }
+        if ui::metric_card_clickable(ui, "งานใกล้ครบกำหนด (7 วัน)", &due_soon.to_string(), AMBER)
+            .clicked()
+        {
+            *action = Some(Action::DueSoon);
+        }
+        let money = format!("{} บาท", group_thousands(outstanding));
+        if ui::metric_card_clickable(ui, "ยอดสำรองจ่ายค้างรับ", &money, INDIGO).clicked() {
+            *action = Some(Action::Outstanding);
+        }
+    });
 }
 
 fn attention_panel(
@@ -343,3 +360,93 @@ mod tests {
         assert_eq!(got, vec![2, 3]); // earliest two: 06-05 then 06-11
     }
 }
+```
+
+- [ ] **Step 2: Remove the now-unneeded `#[allow(dead_code)]` in `src/db/mod.rs`**
+
+Find this block:
+
+```rust
+    /// Reserved for a planned "due soon" dashboard card (see the query of the
+    /// same name); kept so the card can be wired up without new plumbing.
+    #[allow(dead_code)]
+    pub fn count_due_soon_todos(&self, days: i64) -> Result<i64> {
+        queries::count_due_soon_todos(&self.conn, days)
+    }
+```
+
+Replace it with (drop the attribute, update the comment):
+
+```rust
+    /// Count of unfinished todos due within the next `days` days (the dashboard's
+    /// "due soon" card).
+    pub fn count_due_soon_todos(&self, days: i64) -> Result<i64> {
+        queries::count_due_soon_todos(&self.conn, days)
+    }
+```
+
+- [ ] **Step 3: Run the helper unit tests**
+
+Run: `cargo test dashboard::`
+Expected: `attention_includes_overdue_and_due_soon_excludes_others` and `attention_sorts_by_due_and_caps_to_limit` pass (2 passed).
+
+- [ ] **Step 4: Build and run the full suite**
+
+Run: `cargo build`
+Expected: compiles with **no warnings** (the `count_due_soon_todos` dead-code allow is gone because the dashboard now calls it).
+
+Run: `cargo test`
+Expected: all pass (the prior 95 + 2 new = 97 passed; 0 failed).
+
+- [ ] **Step 5: Commit**
+
+```
+git add src/ui/dashboard.rs src/db/mod.rs
+git commit -m "Rework dashboard: clickable metrics, attention + meetings panels
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 2: Visual verification and finish
+
+**Files:** none (verification only; re-touch `src/ui/dashboard.rs` only if a glyph/layout fix is needed).
+
+- [ ] **Step 1: Launch the app and capture the Dashboard**
+
+Build and run the release exe, then capture the window (PowerShell + `Add-Type` C# `PrintWindow` against the `amway_ccs_tracker` process `MainWindowHandle`, run via Windows PowerShell `powershell.exe` so `System.Drawing.Bitmap` is available — same technique used for prior visual checks). The Dashboard is the default view, so no navigation is needed.
+
+```
+cargo build --release
+.\target\release\amway_ccs_tracker.exe   # then capture its window to a PNG and open it
+```
+
+- [ ] **Step 2: Verify the layout and glyphs**
+
+Confirm: seven metric cards wrap neatly; the two panels sit side by side (งานที่ต้องสนใจ | งานประชุมที่กำลังจะถึง); the VIP-20 bar and Sponsor-Flow card show below. Check the empty-state line **"ไม่มีงานเร่งด่วน 🎉"** renders the 🎉 glyph (not a tofu box).
+
+**If 🎉 is tofu:** it is not in egui's bundled font subset. Replace `"ไม่มีงานเร่งด่วน 🎉"` with `"ไม่มีงานเร่งด่วน ✅"` (✅ is already used elsewhere in the app and is known-good), rebuild, re-capture. Commit the fix:
+```
+git add src/ui/dashboard.rs
+git commit -m "Use a font-subset glyph for the dashboard empty state
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 3: Manual interaction check**
+
+With some seeded data: click each metric card and confirm it navigates to the right view (and that Overdue/Due-soon/Outstanding land on the filtered page); tick a task in "งานที่ต้องสนใจ" and confirm a contact-linked task opens the result dialog while an unassigned task is marked done; click "ดูทั้งหมด →" on each panel. (If data is sparse, verify what you can and note the rest as covered by the navigation map.)
+
+- [ ] **Step 4: Finish the branch**
+
+Use the **superpowers:finishing-a-development-branch** skill: confirm `cargo test` passes, then present the merge/PR options. (Per project rule, do NOT merge to main without explicit user approval.)
+
+---
+
+## Notes for the implementer
+
+- **Deferred-action pattern:** never set `app.view` (or other `app` fields) inside the card/panel closures — record an `Action` and apply it once after layout. This avoids borrow conflicts and matches the existing `go_overdue` approach the old dashboard used.
+- **`app.handle(r, default)` needs two statements** (`let r = app.db.X(); let v = app.handle(r, 0);`) — calling `app.handle(app.db.X(), 0)` in one expression double-borrows `app`.
+- **`TodoRow` is not `Clone`** — that is why `Action::CompleteTodo` carries individual fields, and `attention_todos` consumes its input via `into_iter()` and returns owned rows.
+- **Completion behavior mirrors `src/ui/todo.rs`:** contact-linked todos open `pending_todo_done` (result captured on save); unassigned todos are marked done immediately.
