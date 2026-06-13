@@ -84,6 +84,9 @@ impl DbConnection {
     pub fn list_abos(&self) -> Result<Vec<Contact>> {
         queries::list_abos(&self.conn)
     }
+    pub fn me_contact_id(&self) -> Result<i64> {
+        queries::me_contact_id(&self.conn)
+    }
     pub fn delete_contact(&self, id: i64) -> Result<()> {
         queries::delete_contact(&self.conn, id)
     }

@@ -204,14 +204,14 @@ pub fn get_contact(conn: &Connection, id: i64) -> Result<Contact> {
 }
 
 pub fn list_contacts(conn: &Connection) -> Result<Vec<Contact>> {
-    let sql = format!("SELECT {C} FROM contacts c ORDER BY c.name");
+    let sql = format!("SELECT {C} FROM contacts c WHERE c.is_me = 0 ORDER BY c.name");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([], row_to_contact)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 pub fn list_by_type(conn: &Connection, ty: ContactType) -> Result<Vec<Contact>> {
-    let sql = format!("SELECT {C} FROM contacts c WHERE c.contact_type = ?1 ORDER BY c.name");
+    let sql = format!("SELECT {C} FROM contacts c WHERE c.contact_type = ?1 AND c.is_me = 0 ORDER BY c.name");
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map([ty.as_str()], row_to_contact)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -219,6 +219,17 @@ pub fn list_by_type(conn: &Connection, ty: ContactType) -> Result<Vec<Contact>> 
 
 pub fn list_abos(conn: &Connection) -> Result<Vec<Contact>> {
     list_by_type(conn, ContactType::Abo)
+}
+
+/// The id of the hidden "me" contact row (seeded by migration v12). Used to
+/// prepend the "ฉัน (Me)" option to the Todo picker and to filter the
+/// "เฉพาะของฉัน" view in Activity History.
+pub fn me_contact_id(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT id FROM contacts WHERE is_me = 1 LIMIT 1",
+        [],
+        |r| r.get(0),
+    )?)
 }
 
 /// Delete a contact. Scores / follow-up / flow rows cascade; any downline's
@@ -265,7 +276,7 @@ pub fn abo_leg_counts(conn: &Connection, abo_id: i64) -> Result<(usize, usize, u
 /// of [`abo_leg_counts`], used by the self Rank Advisor.
 pub fn me_leg_counts(conn: &Connection) -> Result<(usize, usize, usize)> {
     let mut stmt = conn
-        .prepare("SELECT rank FROM contacts WHERE sponsor_id IS NULL AND contact_type = 'ABO'")?;
+        .prepare("SELECT rank FROM contacts WHERE sponsor_id IS NULL AND contact_type = 'ABO' AND is_me = 0")?;
     let ranks = stmt.query_map([], |row| {
         let s: Option<String> = row.get(0)?;
         Ok(s)
@@ -1574,7 +1585,7 @@ pub fn remove_attendee(conn: &Connection, meeting_id: i64, contact_id: i64) -> R
 
 pub fn count_by_type(conn: &Connection, ty: ContactType) -> Result<i64> {
     Ok(conn.query_row(
-        "SELECT COUNT(*) FROM contacts WHERE contact_type = ?1",
+        "SELECT COUNT(*) FROM contacts WHERE contact_type = ?1 AND is_me = 0",
         [ty.as_str()],
         |r| r.get(0),
     )?)
@@ -1585,7 +1596,7 @@ pub fn count_conversions_this_month(conn: &Connection) -> Result<i64> {
     let ym = Local::now().format("%Y-%m").to_string();
     Ok(conn.query_row(
         "SELECT COUNT(*) FROM contacts
-         WHERE contact_type IN ('Customer', 'ABO') AND substr(created_at, 1, 7) = ?1",
+         WHERE contact_type IN ('Customer', 'ABO') AND is_me = 0 AND substr(created_at, 1, 7) = ?1",
         [ym],
         |r| r.get(0),
     )?)
@@ -1609,7 +1620,7 @@ pub fn list_prospect_rows(conn: &Connection, query: &str) -> Result<Vec<Prospect
          FROM contacts c
          LEFT JOIN prospect_scores ps ON ps.contact_id = c.id
          LEFT JOIN sponsor_flow_status sf ON sf.contact_id = c.id
-         WHERE c.contact_type = 'Prospect'
+         WHERE c.contact_type = 'Prospect' AND c.is_me = 0
            AND (c.name LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1 OR IFNULL(c.phone,'') LIKE ?1)
          ORDER BY COALESCE(ps.total, 0) DESC, c.name ASC"
     );
@@ -1642,7 +1653,7 @@ pub fn list_customer_rows(conn: &Connection, query: &str) -> Result<Vec<Customer
          FROM contacts c
          LEFT JOIN customer_scores cs ON cs.contact_id = c.id
          LEFT JOIN contacts up ON up.id = c.sponsor_id
-         WHERE c.contact_type = 'Customer'
+         WHERE c.contact_type = 'Customer' AND c.is_me = 0
            AND (c.name LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1 OR IFNULL(c.phone,'') LIKE ?1)
          ORDER BY COALESCE(cs.total, 0) DESC, c.name ASC"
     );
@@ -1684,7 +1695,7 @@ pub fn list_abo_rows(conn: &Connection, query: &str) -> Result<Vec<AboRow>> {
          FROM contacts c
          LEFT JOIN contacts up ON up.id = c.sponsor_id
          LEFT JOIN follow_up_sheets fs ON fs.contact_id = c.id
-         WHERE c.contact_type = 'ABO'
+         WHERE c.contact_type = 'ABO' AND c.is_me = 0
            AND (c.name LIKE ?1 OR IFNULL(c.nickname,'') LIKE ?1 OR IFNULL(c.phone,'') LIKE ?1)
          ORDER BY c.name ASC"
     );
@@ -1791,6 +1802,33 @@ mod tests {
             .unwrap();
         assert_eq!(scores, 0);
         assert_eq!(flows, 0);
+    }
+
+    #[test]
+    fn me_contact_id_returns_seeded_row() {
+        let conn = mem();
+        let id = me_contact_id(&conn).unwrap();
+        let me = get_contact(&conn, id).unwrap();
+        assert_eq!(me.name, "ฉัน");
+        assert_eq!(me.contact_type, ContactType::Abo);
+    }
+
+    #[test]
+    fn me_row_hidden_from_lists() {
+        let conn = mem();
+        // No contacts added; only the seeded me-row exists. It must not appear in
+        // the general list or the ABO count despite its contact_type = 'ABO'.
+        assert!(list_contacts(&conn).unwrap().is_empty());
+        assert_eq!(count_by_type(&conn, ContactType::Abo).unwrap(), 0);
+        assert!(list_abos(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn me_leg_counts_excludes_me() {
+        let conn = mem();
+        // The me-row has sponsor_id IS NULL AND contact_type = 'ABO', which would
+        // otherwise match me_leg_counts' filter and inflate the leg tally.
+        assert_eq!(me_leg_counts(&conn).unwrap(), (0, 0, 0));
     }
 
     #[test]
