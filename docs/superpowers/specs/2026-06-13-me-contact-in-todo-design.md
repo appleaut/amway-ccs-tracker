@@ -25,7 +25,7 @@ real contact row to log against.
 
 ## Constraint / Risk
 
-A me-row with `contact_type = 'Abo'` would leak into every query that lists or counts contacts by
+A me-row with `contact_type = 'ABO'` would leak into every query that lists or counts contacts by
 type — most dangerously the **network chart** (`list_abos` → a duplicate "me" node) and
 **`me_leg_counts`** (`sponsor_id IS NULL AND contact_type='ABO'` would count the me-row itself as a
 downline leg, corrupting the rank assessment). The design therefore **hides the me-row everywhere
@@ -49,7 +49,7 @@ if version < 12 {
     conn.execute_batch("ALTER TABLE contacts ADD COLUMN is_me INTEGER NOT NULL DEFAULT 0;")?;
     conn.execute(
         "INSERT INTO contacts (name, nickname, gender, network_category, contact_type, is_me, created_at)
-         SELECT 'ฉัน', 'Me', 'Male', 'Family', 'Abo', 1, ?1
+         SELECT 'ฉัน', 'Me', 'Male', 'Family', 'ABO', 1, ?1
          WHERE NOT EXISTS (SELECT 1 FROM contacts WHERE is_me = 1)",
         params![Local::now().to_rfc3339()],
     )?;
