@@ -138,7 +138,7 @@ fn metric_row(app: &mut AppState, ui: &mut egui::Ui, action: &mut Option<Action>
         if ui::metric_card_clickable(ui, "นักธุรกิจ (ABO)", &abos.to_string(), ORANGE).clicked() {
             *action = Some(Action::Go(ui::View::Abos));
         }
-        if ui::metric_card_clickable(ui, "เปลี่ยนสถานะเดือนนี้", &conversions.to_string(), PINK)
+        if ui::metric_card_clickable(ui, "Monthly Activity", &conversions.to_string(), PINK)
             .clicked()
         {
             *action = Some(Action::Go(ui::View::Activities));

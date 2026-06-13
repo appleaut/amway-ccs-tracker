@@ -70,7 +70,7 @@ Calls these private section functions in order:
    | ผู้มุ่งหวัง (Prospects) | `count_by_type(Prospect)` | `view = Prospects` |
    | ลูกค้า VIP (Customers) | `count_by_type(Customer)` | `view = Customers` |
    | นักธุรกิจ (ABO) | `count_by_type(Abo)` | `view = Abos` |
-   | เปลี่ยนสถานะเดือนนี้ | `count_conversions_this_month()` | `view = Activities` |
+   | Monthly Activity | `count_conversions_this_month()` | `view = Activities` |
    | งานเลยกำหนด (red) | `count_overdue_todos()` | `view = Todos`, status = `Overdue`, who = `All` |
    | งานใกล้ครบกำหนด (7 วัน) | `count_due_soon_todos(7)` | `view = Todos`, status = `Pending`, who = `All` |
    | ยอดสำรองจ่ายค้างรับ | `group_thousands(outstanding_total())` + " บาท" | `view = Advances`, advance_status_filter = `Outstanding` |
