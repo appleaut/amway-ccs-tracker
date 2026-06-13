@@ -35,10 +35,15 @@ pub fn render(app: &mut AppState, ctx: &egui::Context) {
     } else {
         Vec::new()
     };
-    let contact_options: Vec<(i64, String)> = contacts
+    let mut contact_options: Vec<(i64, String)> = contacts
         .iter()
         .map(|c| (c.id, format!("{} · {}", c.display_name(), c.contact_type.label_th())))
         .collect();
+    if pending.contact_name.is_none() {
+        if let Ok(mid) = app.db.me_contact_id() {
+            contact_options.insert(0, (mid, "ฉัน (Me)".to_string()));
+        }
+    }
 
     let mut save = false;
     let mut cancel = false;
