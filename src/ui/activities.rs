@@ -15,6 +15,7 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(6.0);
 
     let kinds = app.db.list_activity_kinds().unwrap_or_default();
+    let me_id = app.db.me_contact_id().ok();
 
     ui.horizontal(|ui| {
         // The text box, button and kind dropdown have different intrinsic heights
@@ -69,6 +70,8 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
                 }
             },
         );
+        ui.separator();
+        ui.checkbox(&mut app.history_mine_only, "เฉพาะของฉัน");
     });
 
     ui.add_space(8.0);
@@ -77,6 +80,11 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     let mut rows = app.handle(r, Vec::new());
     if let Some(k) = &app.history_kind {
         rows.retain(|row| &row.activity.kind == k);
+    }
+    if app.history_mine_only {
+        if let Some(mid) = me_id {
+            rows.retain(|row| row.contact_id == mid);
+        }
     }
 
     ui.label(

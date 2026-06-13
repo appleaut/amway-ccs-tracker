@@ -70,6 +70,8 @@ pub struct AppState {
     pub activity_note: String,
     /// Kind filter on the aggregate Activity History page (`None` = all kinds).
     pub history_kind: Option<String>,
+    /// Activity History: when true, show only the me-row's activities.
+    pub history_mine_only: bool,
     /// Draft text for the Activity Types page (add / rename buffer).
     pub kind_draft: String,
     /// Activity-type id being renamed on the Activity Types page (`None` = add).
@@ -170,6 +172,7 @@ impl AppState {
             activity_kind: String::new(),
             activity_note: String::new(),
             history_kind: None,
+            history_mine_only: false,
             kind_draft: String::new(),
             kind_edit: None,
             export_chart_pending: false,
