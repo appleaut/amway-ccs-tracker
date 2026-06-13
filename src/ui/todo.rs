@@ -115,12 +115,17 @@ pub fn render(app: &mut AppState, ui: &mut egui::Ui) {
     ui.add_space(8.0);
 
     // Contacts for the picker (all types), pre-fetched so the combo closure does
-    // not borrow app.db while mutating app.todo_form.
+    // not borrow app.db while mutating app.todo_form. `list_contacts` hides the
+    // me-row, so prepend "ฉัน (Me)" explicitly as the first option.
+    let me_id = app.db.me_contact_id().ok();
     let contacts = app.db.list_contacts().unwrap_or_default();
-    let contact_options: Vec<(i64, String)> = contacts
+    let mut contact_options: Vec<(i64, String)> = contacts
         .iter()
         .map(|c| (c.id, format!("{} · {}", c.display_name(), c.contact_type.label_th())))
         .collect();
+    if let Some(mid) = me_id {
+        contact_options.insert(0, (mid, "ฉัน (Me)".to_string()));
+    }
 
     let mut submit = false; // add or save, depending on mode
     let mut cancel_edit = false;

@@ -116,7 +116,7 @@ fn metric_row(app: &mut AppState, ui: &mut egui::Ui, action: &mut Option<Action>
         ("ผู้มุ่งหวัง (Prospects)", prospects.to_string(), ACCENT_STRONG, CardNav::View(ui::View::Prospects)),
         ("ลูกค้า VIP (Customers)", customers.to_string(), GREEN, CardNav::View(ui::View::Customers)),
         ("นักธุรกิจ (ABO)", abos.to_string(), ORANGE, CardNav::View(ui::View::Abos)),
-        ("เปลี่ยนสถานะเดือนนี้", conversions.to_string(), PINK, CardNav::View(ui::View::Activities)),
+        ("Monthly Activity", conversions.to_string(), PINK, CardNav::View(ui::View::Activities)),
         ("งานเลยกำหนด (Overdue)", overdue.to_string(), RED, CardNav::Overdue),
         ("งานใกล้ครบกำหนด (7 วัน)", due_soon.to_string(), AMBER, CardNav::DueSoon),
         (

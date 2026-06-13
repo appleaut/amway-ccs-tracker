@@ -3,12 +3,13 @@
 //! Migrations are versioned through SQLite's `PRAGMA user_version`. Bumping the
 //! schema means adding a new block guarded by the current version.
 
+use chrono::Local;
 use rusqlite::{params, Connection};
 
 use crate::error::Result;
 
 /// Current schema version understood by this build.
-const CURRENT_VERSION: i64 = 11;
+const CURRENT_VERSION: i64 = 12;
 
 /// Initial schema. Foreign keys cascade scores / follow-up rows when a contact
 /// is deleted, but a deleted sponsor only nulls its downline's `sponsor_id`
@@ -270,6 +271,22 @@ pub fn migrate(conn: &Connection) -> Result<()> {
                 created_at     TEXT    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_todo_schedules_contact ON todo_schedules(contact_id);",
+        )?;
+    }
+
+    if version < 12 {
+        // A hidden "me" contact row carries my own activities and can be a todo's
+        // target ("เกี่ยวกับ ฉัน"). It is excluded from every typed list/count by an
+        // `is_me = 0` guard (see queries.rs) and revealed only in the Todo picker,
+        // so it never pollutes the network chart, rank legs, or dashboards. The seed
+        // is guarded by NOT EXISTS so it is created exactly once across a fresh
+        // install, an upgrade-in-place, or a restore of a pre-v12 backup.
+        conn.execute_batch("ALTER TABLE contacts ADD COLUMN is_me INTEGER NOT NULL DEFAULT 0;")?;
+        conn.execute(
+            "INSERT INTO contacts (name, nickname, gender, network_category, contact_type, is_me, created_at)
+             SELECT 'ฉัน', 'Me', 'Male', 'Family', 'ABO', 1, ?1
+             WHERE NOT EXISTS (SELECT 1 FROM contacts WHERE is_me = 1)",
+            params![Local::now().to_rfc3339()],
         )?;
     }
 
